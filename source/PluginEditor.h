@@ -1,25 +1,19 @@
 #pragma once
-
 #include "PluginProcessor.h"
-#include "BinaryData.h"
-#include "melatonin_inspector/melatonin_inspector.h"
+#include <juce_gui_extra/juce_gui_extra.h>
 
-//==============================================================================
 class PluginEditor : public juce::AudioProcessorEditor
 {
 public:
     explicit PluginEditor (PluginProcessor&);
-    ~PluginEditor() override;
-
-    //==============================================================================
+    ~PluginEditor() override = default;
     void paint (juce::Graphics&) override;
     void resized() override;
+    void chooseProject (bool save, juce::WebBrowserComponent::NativeFunctionCompletion);
 
 private:
-    // This reference is provided as a quick way for your editor to
-    // access the processor object that created it.
     PluginProcessor& processorRef;
-    std::unique_ptr<melatonin::Inspector> inspector;
-    juce::TextButton inspectButton { "Inspect the UI" };
+    std::unique_ptr<juce::FileChooser> chooser;
+    std::unique_ptr<juce::WebBrowserComponent> webView;
     JUCE_DECLARE_NON_COPYABLE_WITH_LEAK_DETECTOR (PluginEditor)
 };

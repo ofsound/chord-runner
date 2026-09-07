@@ -1,48 +1,83 @@
 #include "PluginEditor.h"
+#include "WebViewResourceProvider.h"
 
-PluginEditor::PluginEditor (PluginProcessor& p)
-    : AudioProcessorEditor (&p), processorRef (p)
+namespace
 {
-    juce::ignoreUnused (processorRef);
+class ChordRunnerBrowser final : public juce::WebBrowserComponent
+{
+public:
+    explicit ChordRunnerBrowser (const Options& options) : WebBrowserComponent (options) {}
+    bool pageAboutToLoad (const juce::String& url) override
+    {
+        return url.startsWith (getResourceProviderRoot()) || url == "about:blank"
+#if JUCE_DEBUG && CHORD_RUNNER_UI_DEV_SERVER
+            || url.startsWith ("http://localhost:5175/")
+#endif
+            ;
+    }
+};
+}
 
-    addAndMakeVisible (inspectButton);
+PluginEditor::PluginEditor (PluginProcessor& p) : AudioProcessorEditor (&p), processorRef (p)
+{
+    webView = std::make_unique<ChordRunnerBrowser> (WebViewResources::makeBrowserOptions (processorRef, *this));
+    addAndMakeVisible (*webView);
+    setResizable (true, true);
+    setResizeLimits (760, 540, 2560, 1600);
+    setSize (1060, 780);
+#if JUCE_DEBUG && CHORD_RUNNER_UI_DEV_SERVER
+    webView->goToURL ("http://localhost:5175/");
+#else
+    webView->goToURL (juce::WebBrowserComponent::getResourceProviderRoot());
+#endif
+}
 
-    // this chunk of code instantiates and opens the melatonin inspector
-    inspectButton.onClick = [&] {
-        if (!inspector)
+void PluginEditor::paint (juce::Graphics& g) { g.fillAll (juce::Colour (0xff09090b)); }
+void PluginEditor::resized() { if (webView != nullptr) webView->setBounds (getLocalBounds()); }
+
+void PluginEditor::chooseProject (bool save, juce::WebBrowserComponent::NativeFunctionCompletion complete)
+{
+    if (chooser != nullptr)
+    {
+        complete ("A file dialog is already open.");
+        return;
+    }
+    const auto folder = juce::File::getSpecialLocation (juce::File::userDocumentsDirectory);
+    chooser = std::make_unique<juce::FileChooser> (save ? "Save Chord Runner project" : "Open Chord Runner project",
+        folder.getChildFile ("Untitled.chordrunner"), "*.chordrunner");
+    const int flags = juce::FileBrowserComponent::canSelectFiles
+        | (save ? juce::FileBrowserComponent::saveMode | juce::FileBrowserComponent::warnAboutOverwriting
+                : juce::FileBrowserComponent::openMode);
+    chooser->launchAsync (flags, [safe = juce::Component::SafePointer<PluginEditor> (this), save, completion = std::move (complete)] (const juce::FileChooser& dialog)
+    {
+        if (safe == nullptr)
+            return;
+        auto file = dialog.getResult();
+        juce::String error;
+        if (file != juce::File {})
         {
-            inspector = std::make_unique<melatonin::Inspector> (*this);
-            inspector->onClose = [this]() { inspector.reset(); };
+            if (save)
+            {
+                file = file.withFileExtension ("chordrunner");
+                juce::MemoryBlock data;
+                safe->processorRef.getStateInformation (data);
+                juce::TemporaryFile temporary (file);
+                if (! temporary.getFile().replaceWithData (data.getData(), data.getSize())
+                    || ! temporary.overwriteTargetFileWithTemporary())
+                    error = "Could not save the project.";
+            }
+            else if (file.getSize() <= 0 || file.getSize() > 65536)
+            {
+                error = "The file is empty or too large to be a Chord Runner project.";
+            }
+            else
+            {
+                const auto result = safe->processorRef.setTimelineState (juce::JSON::parse (file.loadFileAsString()));
+                error = result.getErrorMessage();
+                if (result.wasOk()) safe->processorRef.setPlaying (false);
+            }
         }
-
-        inspector->setVisible (true);
-    };
-
-    // Make sure that before the constructor has finished, you've set the
-    // editor's size to whatever you need it to be.
-    setSize (400, 300);
-}
-
-PluginEditor::~PluginEditor()
-{
-}
-
-void PluginEditor::paint (juce::Graphics& g)
-{
-    // (Our component is opaque, so we must completely fill the background with a solid colour)
-    g.fillAll (getLookAndFeel().findColour (juce::ResizableWindow::backgroundColourId));
-
-    auto area = getLocalBounds();
-    g.setColour (juce::Colours::white);
-    g.setFont (16.0f);
-    auto helloWorld = juce::String ("Hello from ") + PRODUCT_NAME_WITHOUT_VERSION + " v" VERSION + " running in " + CMAKE_BUILD_TYPE;
-    g.drawText (helloWorld, area.removeFromTop (150), juce::Justification::centred, false);
-}
-
-void PluginEditor::resized()
-{
-    // layout the positions of your child components here
-    auto area = getLocalBounds();
-    area.removeFromBottom(50);
-    inspectButton.setBounds (getLocalBounds().withSizeKeepingCentre(100, 50));
+        completion (error);
+        safe->chooser.reset();
+    });
 }
