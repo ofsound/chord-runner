@@ -1,0 +1,58 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512" width="512" height="512">
+  <defs>
+    <linearGradient id="bg10" x1="0%" y1="0%" x2="100%" y2="100%">
+      <stop offset="0%" stop-color="#020617"/>
+      <stop offset="100%" stop-color="#0f172a"/>
+    </linearGradient>
+    <linearGradient id="hex10" x1="0%" y1="0%" x2="100%" y2="100%">
+      <stop offset="0%" stop-color="#06b6d4"/>
+      <stop offset="40%" stop-color="#8b5cf6"/>
+      <stop offset="100%" stop-color="#ec4899"/>
+    </linearGradient>
+    <linearGradient id="hex10inner" x1="0%" y1="0%" x2="100%" y2="100%">
+      <stop offset="0%" stop-color="#22d3ee"/>
+      <stop offset="100%" stop-color="#a78bfa"/>
+    </linearGradient>
+    <linearGradient id="pulse10" x1="0%" y1="0%" x2="100%" y2="0%">
+      <stop offset="0%" stop-color="#06b6d4" stop-opacity="0"/>
+      <stop offset="30%" stop-color="#06b6d4"/>
+      <stop offset="50%" stop-color="#8b5cf6"/>
+      <stop offset="70%" stop-color="#ec4899"/>
+      <stop offset="100%" stop-color="#ec4899" stop-opacity="0"/>
+    </linearGradient>
+    <filter id="hex-glow10">
+      <feGaussianBlur stdDeviation="8" result="blur"/>
+      <feMerge><feMergeNode in="blur"/><feMergeNode in="SourceGraphic"/></feMerge>
+    </filter>
+    <filter id="hex-shadow10">
+      <feDropShadow dx="0" dy="0" stdDeviation="15" flood-color="#8b5cf6" flood-opacity="0.5"/>
+    </filter>
+    <clipPath id="hex-clip10">
+      <polygon points="256,76 412,166 412,346 256,436 100,346 100,166"/>
+    </clipPath>
+  </defs>
+  <rect width="512" height="512" rx="96" fill="url(#bg10)"/>
+  <!-- Outer hexagon frame -->
+  <g filter="url(#hex-shadow10)">
+    <polygon points="256,76 412,166 412,346 256,436 100,346 100,166" 
+             fill="none" stroke="url(#hex10)" stroke-width="6" filter="url(#hex-glow10)"/>
+  </g>
+  <!-- Inner hexagon -->
+  <polygon points="256,130 370,194 370,318 256,382 142,318 142,194" 
+           fill="none" stroke="url(#hex10inner)" stroke-width="3" opacity="0.4"/>
+  <!-- Musical waveform / heartbeat line through center -->
+  <g clip-path="url(#hex-clip10)">
+    <path d="M80 256 L160 256 L190 256 L210 180 L240 340 L270 160 L300 350 L320 200 L340 256 L370 256 L440 256" 
+          stroke="url(#pulse10)" stroke-width="7" fill="none" stroke-linecap="round" stroke-linejoin="round"
+          filter="url(#hex-glow10)"/>
+  </g>
+  <!-- Hexagon face fills for 3D -->
+  <polygon points="256,76 412,166 412,256 256,256 100,256 100,166" fill="white" opacity="0.03"/>
+  <!-- Corner accent dots -->
+  <circle cx="256" cy="76" r="8" fill="#06b6d4" filter="url(#hex-glow10)"/>
+  <circle cx="412" cy="166" r="7" fill="#7c3aed" filter="url(#hex-glow10)"/>
+  <circle cx="412" cy="346" r="7" fill="#a855f7" filter="url(#hex-glow10)"/>
+  <circle cx="256" cy="436" r="8" fill="#ec4899" filter="url(#hex-glow10)"/>
+  <circle cx="100" cy="346" r="7" fill="#d946ef" filter="url(#hex-glow10)"/>
+  <circle cx="100" cy="166" r="7" fill="#22d3ee" filter="url(#hex-glow10)"/>
+</svg>

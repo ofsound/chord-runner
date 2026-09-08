@@ -8,7 +8,9 @@ juce::Result parseProgression (const juce::String& text, Timeline& destination)
 {
     if (text.length() > 4096)
         return juce::Result::fail ("Keep the progression under 4096 characters.");
-    const auto tokens = juce::StringArray::fromTokens (text.replace (juce::String::charToString (0x266f), "#").replace (juce::String::charToString (0x266d), "b"), " \t\r\n|-", "");
+    // JUCE 9 String::replace compares UTF-8 with strncmp using a character count as a byte
+    // limit, so music sharp and flat both match on the shared 0xE2 prefix. replaceCharacter maps code points.
+    const auto tokens = juce::StringArray::fromTokens (text.replaceCharacter (juce::juce_wchar (0x266f), '#').replaceCharacter (juce::juce_wchar (0x266d), 'b'), " \t\r\n|-", "");
     auto next = destination;
     next.count = 0;
     // 7, maj7 and m7 are chord qualities; use @7 for a seven-bar duration.

@@ -1,0 +1,60 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512" width="512" height="512">
+  <defs>
+    <linearGradient id="bg1" x1="0%" y1="0%" x2="100%" y2="100%">
+      <stop offset="0%" stop-color="#1a0533"/>
+      <stop offset="50%" stop-color="#2d1b69"/>
+      <stop offset="100%" stop-color="#0f0a1a"/>
+    </linearGradient>
+    <linearGradient id="accent1" x1="0%" y1="0%" x2="100%" y2="100%">
+      <stop offset="0%" stop-color="#ff6b9d"/>
+      <stop offset="50%" stop-color="#c44dff"/>
+      <stop offset="100%" stop-color="#6366f1"/>
+    </linearGradient>
+    <linearGradient id="glow1" x1="0%" y1="0%" x2="100%" y2="0%">
+      <stop offset="0%" stop-color="#ff6b9d" stop-opacity="0.8"/>
+      <stop offset="100%" stop-color="#6366f1" stop-opacity="0.1"/>
+    </linearGradient>
+    <filter id="shadow1">
+      <feDropShadow dx="0" dy="4" stdDeviation="8" flood-color="#c44dff" flood-opacity="0.5"/>
+    </filter>
+    <filter id="glow-filter1">
+      <feGaussianBlur stdDeviation="6" result="blur"/>
+      <feMerge><feMergeNode in="blur"/><feMergeNode in="SourceGraphic"/></feMerge>
+    </filter>
+  </defs>
+  <!-- Background -->
+  <rect width="512" height="512" rx="96" fill="url(#bg1)"/>
+  <!-- Subtle grid lines for depth -->
+  <line x1="0" y1="200" x2="512" y2="200" stroke="#ffffff" stroke-opacity="0.03" stroke-width="1"/>
+  <line x1="0" y1="300" x2="512" y2="300" stroke="#ffffff" stroke-opacity="0.03" stroke-width="1"/>
+  <line x1="0" y1="400" x2="512" y2="400" stroke="#ffffff" stroke-opacity="0.03" stroke-width="1"/>
+  <!-- Motion trail -->
+  <path d="M80 320 Q150 280 200 300 Q260 320 310 260 Q360 200 420 220" 
+        stroke="url(#glow1)" stroke-width="28" fill="none" stroke-linecap="round"
+        filter="url(#glow-filter1)" opacity="0.6"/>
+  <!-- Three chord notes running along the path -->
+  <!-- Note 1 (trailing) -->
+  <g transform="translate(140, 290)" filter="url(#shadow1)" opacity="0.5">
+    <ellipse cx="0" cy="0" rx="22" ry="17" fill="url(#accent1)" transform="rotate(-15)"/>
+    <rect x="19" y="-70" width="6" height="70" rx="3" fill="url(#accent1)"/>
+    <path d="M25 -70 Q45 -60 45 -45 Q45 -30 25 -35" fill="url(#accent1)"/>
+  </g>
+  <!-- Note 2 (middle) -->
+  <g transform="translate(270, 270)" filter="url(#shadow1)" opacity="0.75">
+    <ellipse cx="0" cy="0" rx="26" ry="20" fill="url(#accent1)" transform="rotate(-15)"/>
+    <rect x="22" y="-82" width="7" height="82" rx="3" fill="url(#accent1)"/>
+    <path d="M29 -82 Q52 -70 52 -52 Q52 -34 29 -40" fill="url(#accent1)"/>
+  </g>
+  <!-- Note 3 (leading, largest) -->
+  <g transform="translate(390, 230)" filter="url(#shadow1)">
+    <ellipse cx="0" cy="0" rx="30" ry="23" fill="url(#accent1)" transform="rotate(-15)"/>
+    <rect x="25" y="-95" width="8" height="95" rx="4" fill="url(#accent1)"/>
+    <path d="M33 -95 Q60 -80 60 -58 Q60 -36 33 -44" fill="url(#accent1)"/>
+    <!-- Speed lines -->
+    <line x1="-50" y1="-10" x2="-80" y2="-5" stroke="#ff6b9d" stroke-width="4" stroke-linecap="round" opacity="0.7"/>
+    <line x1="-45" y1="8" x2="-72" y2="12" stroke="#c44dff" stroke-width="3" stroke-linecap="round" opacity="0.5"/>
+    <line x1="-48" y1="-28" x2="-68" y2="-25" stroke="#6366f1" stroke-width="3" stroke-linecap="round" opacity="0.4"/>
+  </g>
+  <!-- "CR" text hint at bottom -->
+  <text x="256" y="440" text-anchor="middle" font-family="system-ui, sans-serif" font-weight="800" font-size="48" fill="white" opacity="0.15" letter-spacing="12">CHORD RUNNER</text>
+</svg>

@@ -1,0 +1,61 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512" width="512" height="512">
+  <defs>
+    <linearGradient id="bg5" x1="0%" y1="100%" x2="100%" y2="0%">
+      <stop offset="0%" stop-color="#0c0a1d"/>
+      <stop offset="50%" stop-color="#1a103a"/>
+      <stop offset="100%" stop-color="#0c0a1d"/>
+    </linearGradient>
+    <linearGradient id="play5" x1="0%" y1="0%" x2="100%" y2="100%">
+      <stop offset="0%" stop-color="#34d399"/>
+      <stop offset="40%" stop-color="#06b6d4"/>
+      <stop offset="100%" stop-color="#8b5cf6"/>
+    </linearGradient>
+    <linearGradient id="wave5a" x1="0%" y1="0%" x2="100%" y2="0%">
+      <stop offset="0%" stop-color="#34d399"/>
+      <stop offset="100%" stop-color="#06b6d4" stop-opacity="0.2"/>
+    </linearGradient>
+    <linearGradient id="wave5b" x1="0%" y1="0%" x2="100%" y2="0%">
+      <stop offset="0%" stop-color="#06b6d4"/>
+      <stop offset="100%" stop-color="#8b5cf6" stop-opacity="0.15"/>
+    </linearGradient>
+    <linearGradient id="wave5c" x1="0%" y1="0%" x2="100%" y2="0%">
+      <stop offset="0%" stop-color="#8b5cf6"/>
+      <stop offset="100%" stop-color="#f472b6" stop-opacity="0.1"/>
+    </linearGradient>
+    <filter id="play-glow5">
+      <feGaussianBlur stdDeviation="10" result="blur"/>
+      <feMerge><feMergeNode in="blur"/><feMergeNode in="SourceGraphic"/></feMerge>
+    </filter>
+    <filter id="play-shadow5">
+      <feDropShadow dx="0" dy="4" stdDeviation="12" flood-color="#34d399" flood-opacity="0.4"/>
+    </filter>
+  </defs>
+  <rect width="512" height="512" rx="96" fill="url(#bg5)"/>
+  <!-- Sound waves emanating from play button -->
+  <g filter="url(#play-glow5)">
+    <!-- Wave 1 -->
+    <path d="M280 160 Q340 200 340 256 Q340 312 280 352" 
+          stroke="url(#wave5a)" stroke-width="8" fill="none" stroke-linecap="round" opacity="0.8"/>
+    <!-- Wave 2 -->
+    <path d="M310 120 Q390 180 390 256 Q390 332 310 392" 
+          stroke="url(#wave5b)" stroke-width="7" fill="none" stroke-linecap="round" opacity="0.6"/>
+    <!-- Wave 3 -->
+    <path d="M340 85 Q440 160 440 256 Q440 352 340 427" 
+          stroke="url(#wave5c)" stroke-width="6" fill="none" stroke-linecap="round" opacity="0.4"/>
+  </g>
+  <!-- Play triangle - large and bold -->
+  <g filter="url(#play-shadow5)">
+    <path d="M130 140 L130 372 L290 256 Z" fill="url(#play5)"/>
+    <!-- 3D highlight face -->
+    <path d="M130 140 L290 256 L130 256 Z" fill="white" opacity="0.12"/>
+    <!-- Edge highlight -->
+    <path d="M130 140 L145 148 L145 364 L130 372 Z" fill="white" opacity="0.08"/>
+  </g>
+  <!-- Chord dots on the waves -->
+  <circle cx="280" cy="200" r="8" fill="#34d399" opacity="0.9"/>
+  <circle cx="310" cy="162" r="7" fill="#06b6d4" opacity="0.7"/>
+  <circle cx="340" cy="135" r="6" fill="#8b5cf6" opacity="0.5"/>
+  <circle cx="280" cy="312" r="8" fill="#34d399" opacity="0.9"/>
+  <circle cx="310" cy="350" r="7" fill="#06b6d4" opacity="0.7"/>
+  <circle cx="340" cy="377" r="6" fill="#8b5cf6" opacity="0.5"/>
+</svg>

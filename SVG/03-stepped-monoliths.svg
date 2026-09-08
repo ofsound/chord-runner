@@ -1,0 +1,166 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512" width="512" height="512">
+  <defs>
+    <!-- Background Gradient -->
+    <radialGradient id="bg-v3" cx="50%" cy="40%" r="70%">
+      <stop offset="0%" stop-color="#18132B" />
+      <stop offset="60%" stop-color="#0A0914" />
+      <stop offset="100%" stop-color="#030206" />
+    </radialGradient>
+
+    <!-- Squircle Border -->
+    <linearGradient id="border-v3" x1="0%" y1="0%" x2="100%" y2="100%">
+      <stop offset="0%" stop-color="#F43F5E" stop-opacity="0.4" />
+      <stop offset="50%" stop-color="#8B5CF6" stop-opacity="0.2" />
+      <stop offset="100%" stop-color="#38BDF8" stop-opacity="0.5" />
+    </linearGradient>
+
+    <!-- Block 1 (Root: Vibrant Teal/Emerald) -->
+    <linearGradient id="top-face-1" x1="0%" y1="0%" x2="100%" y2="100%">
+      <stop offset="0%" stop-color="#34D399" />
+      <stop offset="100%" stop-color="#059669" />
+    </linearGradient>
+    <linearGradient id="left-face-1" x1="0%" y1="0%" x2="0%" y2="100%">
+      <stop offset="0%" stop-color="#047857" />
+      <stop offset="100%" stop-color="#064E3B" />
+    </linearGradient>
+    <linearGradient id="right-face-1" x1="0%" y1="0%" x2="0%" y2="100%">
+      <stop offset="0%" stop-color="#065F46" />
+      <stop offset="100%" stop-color="#022C22" />
+    </linearGradient>
+
+    <!-- Block 2 (3rd: Electric Blue/Indigo) -->
+    <linearGradient id="top-face-2" x1="0%" y1="0%" x2="100%" y2="100%">
+      <stop offset="0%" stop-color="#60A5FA" />
+      <stop offset="100%" stop-color="#3B82F6" />
+    </linearGradient>
+    <linearGradient id="left-face-2" x1="0%" y1="0%" x2="0%" y2="100%">
+      <stop offset="0%" stop-color="#2563EB" />
+      <stop offset="100%" stop-color="#1D4ED8" />
+    </linearGradient>
+    <linearGradient id="right-face-2" x1="0%" y1="0%" x2="0%" y2="100%">
+      <stop offset="0%" stop-color="#1E40AF" />
+      <stop offset="100%" stop-color="#172554" />
+    </linearGradient>
+
+    <!-- Block 3 (5th: Neon Violet/Purple) -->
+    <linearGradient id="top-face-3" x1="0%" y1="0%" x2="100%" y2="100%">
+      <stop offset="0%" stop-color="#C084FC" />
+      <stop offset="100%" stop-color="#A855F7" />
+    </linearGradient>
+    <linearGradient id="left-face-3" x1="0%" y1="0%" x2="0%" y2="100%">
+      <stop offset="0%" stop-color="#9333EA" />
+      <stop offset="100%" stop-color="#7E22CE" />
+    </linearGradient>
+    <linearGradient id="right-face-3" x1="0%" y1="0%" x2="0%" y2="100%">
+      <stop offset="0%" stop-color="#6B21A8" />
+      <stop offset="100%" stop-color="#3B0764" />
+    </linearGradient>
+
+    <!-- Block 4 (7th: Hot Pink/Coral) -->
+    <linearGradient id="top-face-4" x1="0%" y1="0%" x2="100%" y2="100%">
+      <stop offset="0%" stop-color="#FB7185" />
+      <stop offset="100%" stop-color="#F43F5E" />
+    </linearGradient>
+    <linearGradient id="left-face-4" x1="0%" y1="0%" x2="0%" y2="100%">
+      <stop offset="0%" stop-color="#E11D48" />
+      <stop offset="100%" stop-color="#BE123C" />
+    </linearGradient>
+    <linearGradient id="right-face-4" x1="0%" y1="0%" x2="0%" y2="100%">
+      <stop offset="0%" stop-color="#9F1239" />
+      <stop offset="100%" stop-color="#4C0519" />
+    </linearGradient>
+
+    <!-- Laser Grid Floor Lines -->
+    <linearGradient id="grid-fade" x1="0%" y1="100%" x2="0%" y2="0%">
+      <stop offset="0%" stop-color="#818CF8" stop-opacity="0.3" />
+      <stop offset="100%" stop-color="#818CF8" stop-opacity="0" />
+    </linearGradient>
+
+    <filter id="shadow-v3" x="-10%" y="-10%" width="130%" height="130%">
+      <feDropShadow dx="0" dy="24" stdDeviation="24" flood-color="#000000" flood-opacity="0.75" />
+    </filter>
+
+    <filter id="block-shadow" x="-30%" y="-20%" width="160%" height="160%">
+      <feDropShadow dx="-10" dy="20" stdDeviation="16" flood-color="#000000" flood-opacity="0.7" />
+    </filter>
+  </defs>
+
+  <!-- Base Squircle -->
+  <g filter="url(#shadow-v3)">
+    <rect x="32" y="32" width="448" height="448" rx="104" ry="104" fill="url(#bg-v3)" />
+    <rect x="32" y="32" width="448" height="448" rx="104" ry="104" fill="none" stroke="url(#border-v3)" stroke-width="3" />
+  </g>
+
+  <!-- Isometric Ground Grid -->
+  <g stroke="url(#grid-fade)" stroke-width="1.5" opacity="0.6">
+    <line x1="256" y1="410" x2="430" y2="310" />
+    <line x1="256" y1="410" x2="82" y2="310" />
+    <line x1="256" y1="440" x2="450" y2="330" />
+    <line x1="256" y1="440" x2="62" y2="330" />
+    <line x1="169" y1="360" x2="343" y2="260" />
+    <line x1="343" y1="360" x2="169" y2="260" />
+  </g>
+
+  <!-- Stepped Isometric Monoliths in Progression Formation -->
+  <g filter="url(#block-shadow)">
+    <!-- Monolith 1 (Leftmost, Low / Root) -->
+    <g transform="translate(130, 240)">
+      <!-- Left Face -->
+      <polygon points="0,0 0,70 45,96 45,26" fill="url(#left-face-1)" />
+      <!-- Right Face -->
+      <polygon points="45,26 45,96 90,70 90,0" fill="url(#right-face-1)" />
+      <!-- Top Face -->
+      <polygon points="45,-26 90,0 45,26 0,0" fill="url(#top-face-1)" />
+      <!-- Top Highlight Line -->
+      <polyline points="0,0 45,-26 90,0" fill="none" stroke="#A7F3D0" stroke-width="2" stroke-opacity="0.8" />
+    </g>
+
+    <!-- Monolith 2 (Center-Left / Third) -->
+    <g transform="translate(195, 195)">
+      <!-- Left Face -->
+      <polygon points="0,0 0,115 45,141 45,26" fill="url(#left-face-2)" />
+      <!-- Right Face -->
+      <polygon points="45,26 45,141 90,115 90,0" fill="url(#right-face-2)" />
+      <!-- Top Face -->
+      <polygon points="45,-26 90,0 45,26 0,0" fill="url(#top-face-2)" />
+      <!-- Top Highlight Line -->
+      <polyline points="0,0 45,-26 90,0" fill="none" stroke="#BAE6FD" stroke-width="2" stroke-opacity="0.8" />
+    </g>
+
+    <!-- Monolith 3 (Center-Right / Fifth) -->
+    <g transform="translate(260, 150)">
+      <!-- Left Face -->
+      <polygon points="0,0 0,160 45,186 45,26" fill="url(#left-face-3)" />
+      <!-- Right Face -->
+      <polygon points="45,26 45,186 90,160 90,0" fill="url(#right-face-3)" />
+      <!-- Top Face -->
+      <polygon points="45,-26 90,0 45,26 0,0" fill="url(#top-face-3)" />
+      <!-- Top Highlight Line -->
+      <polyline points="0,0 45,-26 90,0" fill="none" stroke="#E9D5FF" stroke-width="2" stroke-opacity="0.8" />
+    </g>
+
+    <!-- Monolith 4 (Apex Runner / Seventh) -->
+    <g transform="translate(325, 105)">
+      <!-- Left Face -->
+      <polygon points="0,0 0,205 45,231 45,26" fill="url(#left-face-4)" />
+      <!-- Right Face -->
+      <polygon points="45,26 45,231 90,205 90,0" fill="url(#right-face-4)" />
+      <!-- Top Face -->
+      <polygon points="45,-26 90,0 45,26 0,0" fill="url(#top-face-4)" />
+      <!-- Top Highlight Line -->
+      <polyline points="0,0 45,-26 90,0" fill="none" stroke="#FECDD3" stroke-width="2.5" stroke-opacity="0.9" />
+    </g>
+  </g>
+
+  <!-- Glowing Playhead Laser Sweeping Through The Peaks -->
+  <g>
+    <line x1="100" y1="260" x2="420" y2="75" stroke="#FFFFFF" stroke-width="3" stroke-linecap="round" />
+    <line x1="100" y1="260" x2="420" y2="75" stroke="#F43F5E" stroke-width="8" stroke-linecap="round" opacity="0.4" filter="blur(3px)" />
+    <!-- Pulse nodes on each chord peak -->
+    <circle cx="175" cy="214" r="5" fill="#FFFFFF" />
+    <circle cx="240" cy="169" r="6" fill="#FFFFFF" />
+    <circle cx="305" cy="124" r="7" fill="#FFFFFF" />
+    <circle cx="370" cy="79" r="8" fill="#FFFFFF" />
+    <circle cx="370" cy="79" r="16" fill="#FB7185" opacity="0.5" filter="blur(4px)" />
+  </g>
+</svg>

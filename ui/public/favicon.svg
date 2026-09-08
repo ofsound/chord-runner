@@ -1,0 +1,30 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 32 32" width="32" height="32" fill="none">
+  <defs>
+    <linearGradient id="fav-arc-1" x1="0%" y1="0%" x2="100%" y2="100%">
+      <stop offset="0%" stop-color="#06B6D4" />
+      <stop offset="100%" stop-color="#3B82F6" />
+    </linearGradient>
+    <linearGradient id="fav-arc-2" x1="0%" y1="0%" x2="100%" y2="100%">
+      <stop offset="0%" stop-color="#6366F1" />
+      <stop offset="100%" stop-color="#A855F7" />
+    </linearGradient>
+    <linearGradient id="fav-arc-3" x1="0%" y1="0%" x2="100%" y2="100%">
+      <stop offset="0%" stop-color="#D946EF" />
+      <stop offset="100%" stop-color="#F43F5E" />
+    </linearGradient>
+    <linearGradient id="fav-arc-4" x1="0%" y1="0%" x2="100%" y2="100%">
+      <stop offset="0%" stop-color="#FB923C" />
+      <stop offset="100%" stop-color="#FBBF24" />
+    </linearGradient>
+  </defs>
+  <rect width="32" height="32" rx="7" fill="#09090b" />
+  <g transform="rotate(-22 16 16)">
+    <ellipse cx="16" cy="16" rx="10" ry="6.5" fill="none" stroke="#1c192c" stroke-width="2.8" />
+    <path d="M 16,9.5 A 10 6.5 0 0 1 25,14" fill="none" stroke="url(#fav-arc-1)" stroke-width="2.4" stroke-linecap="round" />
+    <path d="M 24.5,17 A 10 6.5 0 0 1 17,22.5" fill="none" stroke="url(#fav-arc-2)" stroke-width="2.4" stroke-linecap="round" />
+    <path d="M 15,22.5 A 10 6.5 0 0 1 7,18" fill="none" stroke="url(#fav-arc-3)" stroke-width="2.4" stroke-linecap="round" />
+    <path d="M 7.5,14.5 A 10 6.5 0 0 1 15,9.6" fill="none" stroke="url(#fav-arc-4)" stroke-width="2.4" stroke-linecap="round" />
+  </g>
+  <circle cx="23" cy="19.5" r="1.6" fill="#FFFFFF" />
+  <circle cx="23" cy="19.5" r="3" fill="#38BDF8" opacity="0.5" />
+</svg>

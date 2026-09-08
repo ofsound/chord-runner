@@ -1,0 +1,58 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512" width="512" height="512">
+  <defs>
+    <linearGradient id="bg6" x1="0%" y1="0%" x2="0%" y2="100%">
+      <stop offset="0%" stop-color="#18181b"/>
+      <stop offset="100%" stop-color="#09090b"/>
+    </linearGradient>
+    <linearGradient id="bar6a" x1="0%" y1="0%" x2="100%" y2="0%">
+      <stop offset="0%" stop-color="#ef4444"/>
+      <stop offset="100%" stop-color="#f97316"/>
+    </linearGradient>
+    <linearGradient id="bar6b" x1="0%" y1="0%" x2="100%" y2="0%">
+      <stop offset="0%" stop-color="#f97316"/>
+      <stop offset="100%" stop-color="#eab308"/>
+    </linearGradient>
+    <linearGradient id="bar6c" x1="0%" y1="0%" x2="100%" y2="0%">
+      <stop offset="0%" stop-color="#22c55e"/>
+      <stop offset="100%" stop-color="#06b6d4"/>
+    </linearGradient>
+    <linearGradient id="bar6d" x1="0%" y1="0%" x2="100%" y2="0%">
+      <stop offset="0%" stop-color="#3b82f6"/>
+      <stop offset="100%" stop-color="#8b5cf6"/>
+    </linearGradient>
+    <filter id="bar-glow6">
+      <feGaussianBlur stdDeviation="6" result="blur"/>
+      <feMerge><feMergeNode in="blur"/><feMergeNode in="SourceGraphic"/></feMerge>
+    </filter>
+    <filter id="bar-shadow6">
+      <feDropShadow dx="4" dy="4" stdDeviation="4" flood-color="#000000" flood-opacity="0.5"/>
+    </filter>
+  </defs>
+  <rect width="512" height="512" rx="96" fill="url(#bg6)"/>
+  <!-- Stacked horizontal bars = chord tones, offset for 3D/depth and motion -->
+  <g filter="url(#bar-shadow6)">
+    <!-- Bar 1 - root -->
+    <rect x="70" y="100" width="320" height="52" rx="12" fill="url(#bar6a)" filter="url(#bar-glow6)"/>
+    <rect x="70" y="100" width="320" height="20" rx="12" fill="white" opacity="0.1"/>
+    
+    <!-- Bar 2 - third, slightly offset right -->
+    <rect x="100" y="180" width="300" height="52" rx="12" fill="url(#bar6b)" filter="url(#bar-glow6)"/>
+    <rect x="100" y="180" width="300" height="20" rx="12" fill="white" opacity="0.1"/>
+    
+    <!-- Bar 3 - fifth, more offset -->
+    <rect x="130" y="260" width="280" height="52" rx="12" fill="url(#bar6c)" filter="url(#bar-glow6)"/>
+    <rect x="130" y="260" width="280" height="20" rx="12" fill="white" opacity="0.1"/>
+    
+    <!-- Bar 4 - octave, most offset -->
+    <rect x="160" y="340" width="260" height="52" rx="12" fill="url(#bar6d)" filter="url(#bar-glow6)"/>
+    <rect x="160" y="340" width="260" height="20" rx="12" fill="white" opacity="0.1"/>
+  </g>
+  <!-- Forward-pointing arrow/chevron overlay suggesting "runner" -->
+  <g opacity="0.2">
+    <path d="M380 80 L460 256 L380 432" stroke="white" stroke-width="8" fill="none" stroke-linecap="round" stroke-linejoin="round"/>
+  </g>
+  <!-- Subtle connecting lines between bars -->
+  <line x1="390" y1="152" x2="400" y2="180" stroke="white" stroke-width="2" opacity="0.15"/>
+  <line x1="410" y1="232" x2="420" y2="260" stroke="white" stroke-width="2" opacity="0.15"/>
+  <line x1="420" y1="312" x2="420" y2="340" stroke="white" stroke-width="2" opacity="0.15"/>
+</svg>

@@ -40,6 +40,9 @@ juce_add_plugin(${PROJECT_NAME}
     IS_MIDI_EFFECT TRUE
     VST3_CATEGORIES Fx Instrument
     PRODUCT_NAME "${PRODUCT_NAME}")
+if(APPLE)
+    include(PamplejuceIcon)
+endif()
 add_library(SharedCode INTERFACE)
 # Standard floating point is needed for finite-number validation and precise timing.
 target_compile_features(SharedCode INTERFACE cxx_std_23)

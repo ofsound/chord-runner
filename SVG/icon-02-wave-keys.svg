@@ -1,0 +1,59 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512" width="512" height="512">
+  <defs>
+    <linearGradient id="bg2" x1="0%" y1="0%" x2="100%" y2="100%">
+      <stop offset="0%" stop-color="#0a192f"/>
+      <stop offset="100%" stop-color="#172a45"/>
+    </linearGradient>
+    <linearGradient id="key-grad" x1="0%" y1="0%" x2="0%" y2="100%">
+      <stop offset="0%" stop-color="#64ffda"/>
+      <stop offset="50%" stop-color="#00b4d8"/>
+      <stop offset="100%" stop-color="#7c3aed"/>
+    </linearGradient>
+    <linearGradient id="key-top" x1="0%" y1="0%" x2="0%" y2="100%">
+      <stop offset="0%" stop-color="#ffffff" stop-opacity="0.3"/>
+      <stop offset="100%" stop-color="#ffffff" stop-opacity="0"/>
+    </linearGradient>
+    <filter id="key-shadow">
+      <feDropShadow dx="0" dy="6" stdDeviation="10" flood-color="#00b4d8" flood-opacity="0.4"/>
+    </filter>
+    <filter id="key-glow">
+      <feGaussianBlur stdDeviation="12" result="blur"/>
+      <feMerge><feMergeNode in="blur"/><feMergeNode in="SourceGraphic"/></feMerge>
+    </filter>
+  </defs>
+  <rect width="512" height="512" rx="96" fill="url(#bg2)"/>
+  <!-- Ambient glow -->
+  <ellipse cx="256" cy="300" rx="200" ry="120" fill="#00b4d8" opacity="0.06"/>
+  <!-- Piano keys as rising wave bars -->
+  <g filter="url(#key-shadow)">
+    <!-- 7 keys forming a wave/equalizer pattern representing a chord -->
+    <rect x="68"  y="310" width="38" height="110" rx="8" fill="url(#key-grad)" opacity="0.5"/>
+    <rect x="68"  y="310" width="38" height="110" rx="8" fill="url(#key-top)"/>
+    
+    <rect x="120" y="260" width="38" height="160" rx="8" fill="url(#key-grad)" opacity="0.65"/>
+    <rect x="120" y="260" width="38" height="160" rx="8" fill="url(#key-top)"/>
+    
+    <rect x="172" y="190" width="38" height="230" rx="8" fill="url(#key-grad)" opacity="0.8"/>
+    <rect x="172" y="190" width="38" height="230" rx="8" fill="url(#key-top)"/>
+    
+    <rect x="224" y="130" width="38" height="290" rx="8" fill="url(#key-grad)"/>
+    <rect x="224" y="130" width="38" height="290" rx="8" fill="url(#key-top)"/>
+    
+    <rect x="276" y="160" width="38" height="260" rx="8" fill="url(#key-grad)" opacity="0.85"/>
+    <rect x="276" y="160" width="38" height="260" rx="8" fill="url(#key-top)"/>
+    
+    <rect x="328" y="220" width="38" height="200" rx="8" fill="url(#key-grad)" opacity="0.7"/>
+    <rect x="328" y="220" width="38" height="200" rx="8" fill="url(#key-top)"/>
+    
+    <rect x="380" y="280" width="38" height="140" rx="8" fill="url(#key-grad)" opacity="0.55"/>
+    <rect x="380" y="280" width="38" height="140" rx="8" fill="url(#key-top)"/>
+  </g>
+  <!-- Sweeping arc connecting the tops -->
+  <path d="M87 310 Q130 240 191 190 Q240 140 243 130 Q260 140 295 160 Q340 200 399 280" 
+        stroke="#64ffda" stroke-width="3" fill="none" stroke-linecap="round" opacity="0.4"
+        filter="url(#key-glow)"/>
+  <!-- Forward arrow suggesting "running" -->
+  <g transform="translate(420, 140)" filter="url(#key-glow)">
+    <path d="M0 30 L35 0 L35 15 L60 15 L60 45 L35 45 L35 60 Z" fill="#64ffda" opacity="0.6" transform="rotate(-20)"/>
+  </g>
+</svg>
