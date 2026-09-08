@@ -1,5 +1,6 @@
 #pragma once
 #include <juce_core/juce_core.h>
+#include "Arpeggiator.h"
 #include <array>
 #include <atomic>
 
@@ -21,7 +22,8 @@ struct Timeline
     std::array<Chord, maxChords> chords {};
     int count = 4, channel = 1, velocity = 100, octave = 4;
     double tempo = 120.0;
-    bool hostSync = false;
+    bool hostSync = false, sequencerEnabled = true;
+    ArpeggiatorSettings arp;
     juce::uint64 noteRevision = 0;
 
     Timeline()

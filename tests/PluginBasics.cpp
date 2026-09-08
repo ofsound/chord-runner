@@ -349,6 +349,7 @@ TEST_CASE ("Tempo edits preserve held notes and bypass releases them", "[process
     processor.processBlockBypassed (audio, midi);
     REQUIRE (events (midi).size() == 3);
     CHECK_FALSE (events (midi)[0].on);
+    midi.clear(); // The host supplies fresh input, not the previous callback's output.
     processor.processBlockBypassed (audio, midi);
     CHECK (midi.isEmpty());
     processor.processBlock (audio, midi);

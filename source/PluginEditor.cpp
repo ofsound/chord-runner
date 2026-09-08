@@ -24,7 +24,7 @@ PluginEditor::PluginEditor (PluginProcessor& p) : AudioProcessorEditor (&p), pro
     addAndMakeVisible (*webView);
     setResizable (true, true);
     setResizeLimits (760, 540, 2560, 1600);
-    setSize (1060, 780);
+    setSize (1120, 900);
 #if JUCE_DEBUG && CHORD_RUNNER_UI_DEV_SERVER
     webView->goToURL ("http://localhost:5175/");
 #else

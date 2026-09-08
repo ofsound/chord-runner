@@ -1,9 +1,12 @@
 <script lang="ts">
   import { onMount } from 'svelte';
   type Chord = { label: string; beats: number; startBeat: number; notes: number[] };
-  type Pattern = { schema: number; app: string; progression: string; tempo: number; channel: number; velocity: number; octave: number; hostSync: boolean; revision: number; totalBeats: number; chords: Chord[] };
+  type Arp = { enabled: boolean; sync: boolean; hold: boolean; velocityEnabled: boolean; velocityRetrigger: boolean; style: number; steps: number; distance: number; offset: number; retrigger: number; repeats: number; target: number; rate: number; freeMs: number; gate: number; swing: number; interval: number; decay: number };
+  const styles = ['Up', 'Down', 'Up & Down', 'Down & Up', 'Converge', 'Diverge', 'Play Order', 'Chord Trigger', 'Random', 'Random Other', 'Random Once'];
+  const rates = [{value: 4, label: '1/1'}, {value: 2, label: '1/2'}, {value: 1, label: '1/4'}, {value: 0.5, label: '1/8'}, {value: 0.25, label: '1/16'}, {value: 0.125, label: '1/32'}, {value: 0.0625, label: '1/64'}, {value: 2/3, label: '1/4 T'}, {value: 1/3, label: '1/8 T'}, {value: 1/6, label: '1/16 T'}, {value: 0.75, label: '1/8 D'}, {value: 0.375, label: '1/16 D'}];
+  type Pattern = { sequencerEnabled: boolean; arp: Arp; schema: number; app: string; progression: string; tempo: number; channel: number; velocity: number; octave: number; hostSync: boolean; revision: number; totalBeats: number; chords: Chord[] };
   type Transport = { playing: boolean; armed: boolean; beat: number; tempo: number; activeChord: number; standalone: boolean; hostAvailable: boolean; revision: number };
-  let pattern = $state<Pattern>({ schema: 1, app: 'Chord Runner', progression: 'C - G - Am - F', tempo: 120, channel: 1, velocity: 100, octave: 4, hostSync: false, revision: 0, totalBeats: 16,
+  let pattern = $state<Pattern>({ sequencerEnabled: true, arp: {enabled: false, sync: true, hold: false, velocityEnabled: false, velocityRetrigger: true, style: 0, steps: 0, distance: 12, offset: 0, retrigger: 1, repeats: 0, target: 64, rate: 0.25, freeMs: 100, gate: 100, swing: 0, interval: 4, decay: 1000}, schema: 2, app: 'Chord Runner', progression: 'C - G - Am - F', tempo: 120, channel: 1, velocity: 100, octave: 4, hostSync: false, revision: 0, totalBeats: 16,
     chords: [{ label: 'C', beats: 4, startBeat: 0, notes: [60,64,67] }, { label: 'G', beats: 4, startBeat: 4, notes: [67,71,74] }, { label: 'Am', beats: 4, startBeat: 8, notes: [69,72,76] }, { label: 'F', beats: 4, startBeat: 12, notes: [65,69,72] }] });
   let transport = $state<Transport>({ playing: false, armed: false, beat: 0, tempo: 120, activeChord: -1, standalone: false, hostAvailable: false, revision: 0 });
   let draft = $state('C - G - Am - F');
@@ -25,31 +28,35 @@
     draft = pattern.progression;
     selected = Math.min(selected, pattern.chords.length - 1);
   }
-  async function apply(overrides: Partial<Pattern> = {}) {
+  async function apply(overrides: Partial<Pattern> = {}, commitDraft = false) {
     if (!connected || busy) return false;
     busy = true;
     try {
-      error = await call('setState', { ...pattern, progression: draft, ...overrides });
+      error = await call('setState', { ...pattern, progression: commitDraft ? draft : pattern.progression, ...overrides });
       if (error) return false;
+      const pendingDraft = draft;
       await readState();
+      if (!commitDraft) draft = pendingDraft;
       return true;
     } catch { error = 'The app connection was interrupted.'; return false; }
     finally { busy = false; }
   }
+  function setArp(overrides: Partial<Arp>) { return apply({arp: {...pattern.arp, ...overrides}}); }
   async function togglePlay() {
+    if (!pattern.sequencerEnabled) return;
     if (transport.armed) { transport = await call('setPlaying', false); return; }
-    if (dirty && !(await apply())) return;
+    if (dirty && !(await apply({}, true))) return;
     transport = await call('setPlaying', true);
   }
   async function project(save: boolean) {
-    if (save && dirty && !(await apply())) return;
+    if (save && dirty && !(await apply({}, true))) return;
     busy = true;
     try { error = await call(save ? 'saveProject' : 'loadProject'); if (!error) await readState(); }
     catch { error = 'The project operation could not complete.'; }
     finally { busy = false; }
   }
   function keyboard(event: KeyboardEvent) {
-    if ((event.metaKey || event.ctrlKey) && event.key === 'Enter') { event.preventDefault(); void apply(); }
+    if ((event.metaKey || event.ctrlKey) && event.key === 'Enter') { event.preventDefault(); void apply({}, true); }
     if (event.code === 'Space' && !(event.target instanceof HTMLInputElement || event.target instanceof HTMLTextAreaElement || event.target instanceof HTMLSelectElement || event.target instanceof HTMLButtonElement) && connected) { event.preventDefault(); void togglePlay(); }
   }
   onMount(() => {
@@ -84,17 +91,26 @@
     <nav aria-label="Project"><button disabled={!connected || busy} onclick={() => project(false)}>Open</button><button disabled={!connected || busy} onclick={() => project(true)}>Save</button><button class:chosen={help} onclick={() => help = !help} aria-expanded={help}>Syntax <span class="question">?</span></button></nav>
   </header>
 
+  <section class="signal-flow" aria-label="MIDI routing">
+      <span class:source-active={!pattern.sequencerEnabled}>MIDI IN</span><span class="flow-arrow">→</span>
+      <button class="module-switch" class:enabled={pattern.sequencerEnabled} aria-pressed={pattern.sequencerEnabled} disabled={!connected || busy} onclick={() => apply({sequencerEnabled: !pattern.sequencerEnabled})}><span class="power">⏻</span> Sequencer <small>{pattern.sequencerEnabled ? 'ON' : 'OFF'}</small></button>
+      <span class="flow-arrow">→</span>
+      <button class="module-switch arp-switch" class:enabled={pattern.arp.enabled} aria-pressed={pattern.arp.enabled} disabled={!connected || busy} onclick={() => setArp({enabled: !pattern.arp.enabled})}><span class="power">⏻</span> Arpeggiator <small>{pattern.arp.enabled ? 'ON' : 'OFF'}</small></button>
+      <span class="flow-arrow">→</span><span class="source-active">MIDI OUT</span>
+      <span class="routing-caption">{pattern.sequencerEnabled ? pattern.arp.enabled ? 'Sequence → Arpeggio' : 'Sequence → Chords' : pattern.arp.enabled ? 'Play notes to arpeggiate' : 'MIDI passes through'}</span>
+    </section>
   <main>
+    {#if error}<p class="error" role="alert">{error}</p>{/if}
+    <div class="module-heading"><h2>Sequencer</h2><span>{pattern.sequencerEnabled ? 'Generates chords · incoming MIDI ignored' : 'Bypassed · using incoming MIDI'}</span></div>
     <section class="composer" aria-labelledby="progression-label">
       <div class="section-label"><label id="progression-label" for="progression">CHORD PROGRESSION</label><span>{dirty ? 'Unapplied changes' : 'One chord. One bar. Keep going.'}</span></div>
-      <div class="input-row"><input id="progression" spellcheck="false" autocomplete="off" maxlength="4096" bind:value={draft} placeholder="C - G - Am - F" aria-describedby="syntax-hint"/><button class="apply" disabled={!connected || busy} onclick={() => apply()}>Apply <span>↵</span></button></div>
+      <div class="input-row"><input id="progression" spellcheck="false" autocomplete="off" maxlength="4096" bind:value={draft} placeholder="C - G - Am - F" aria-describedby="syntax-hint"/><button class="apply" disabled={!connected || busy} onclick={() => apply({}, true)}>Apply <span>↵</span></button></div>
       <div class="input-caption" id="syntax-hint"><span>Try <button class="text-button" onclick={() => draft = 'C1/2 G1/2 | Am2'}>C1/2 G1/2 | Am2</button> <span class="muted">— durations in bars</span></span><span class="shortcut">⌘ / Ctrl + Enter</span></div>
-      {#if error}<p class="error" role="alert">{error}</p>{/if}
       {#if help}<div class="help"><p><b>Roots</b> C, D, E, F, G, A, B · sharps # · flats b</p><p><b>Chords</b> C · Cm · C7 · Cmaj7 · Cm7 · Cdim · Cdim7 · Cm7b5 · Caug · Csus2 · Csus4 · C5</p><p><b>Time</b> One bar by default, in 4/4. C1/2 = half a bar; Am2 = two bars. Spaces, dashes and | separate chords. The | separator does not add time.</p><p><b>Explicit duration</b> Use @ to avoid ambiguity: C7@2 = C dominant seventh for two bars. No inversions yet.</p></div>{/if}
     </section>
 
     <section class="transport" aria-label="Transport and MIDI settings">
-      <button class="play" class:running={transport.armed} disabled={!connected || busy} onclick={togglePlay}><span>{transport.armed ? '■' : '▶'}</span>{transport.armed ? 'Stop' : pattern.hostSync && !transport.standalone ? 'Arm' : 'Play'}</button>
+      <button class="play" class:running={transport.armed && pattern.sequencerEnabled} disabled={!connected || busy || !pattern.sequencerEnabled} onclick={togglePlay}><span>{transport.armed ? '■' : '▶'}</span>{transport.armed ? 'Stop' : pattern.hostSync && !transport.standalone ? 'Arm' : 'Play'}</button>
       <label class="control">TEMPO <div><input aria-label="Tempo" type="number" min="20" max="300" step="1" value={pattern.tempo} disabled={!connected || busy || (pattern.hostSync && !transport.standalone)} onchange={e => apply({tempo: Number(e.currentTarget.value)})}/><span>BPM</span></div></label>
       <label class="control">CLOCK<select aria-label="Clock" value={pattern.hostSync && !transport.standalone ? 'host' : 'internal'} disabled={!connected || busy || transport.standalone} onchange={e => apply({hostSync: e.currentTarget.value === 'host'})}><option value="internal">Internal</option><option value="host">Host sync</option></select></label>
       <div class="transport-spacer"></div>
@@ -112,11 +128,40 @@
           {#each pitches as pitch}<div class="pitch-row" class:black={[1,3,6,8,10].includes(pitch % 12)}></div>{/each}
           {#each pattern.chords as chord, i}{#each chord.notes as note}<div class="note" class:sounding={transport.activeChord === i} style:left={`${chord.startBeat / pattern.totalBeats * 100}%`} style:width={`calc(${chord.beats / pattern.totalBeats * 100}% - 3px)`} style:top={`calc(${(maxNote - note) / pitches.length * 100}% + 2px)`} style:height={`calc(${100 / pitches.length}% - 4px)`}><span>{noteName(note)}</span></div>{/each}{/each}
           {#each Array.from({length: Math.ceil(pattern.totalBeats / 4)}, (_, i) => i) as bar}<div class="bar-line" style:left={`${bar * 4 / pattern.totalBeats * 100}%`}></div>{/each}
-          {#if transport.playing}<div class="playhead" style:left={`${transport.beat / pattern.totalBeats * 100}%`}></div>{/if}
+          {#if transport.playing && pattern.sequencerEnabled}<div class="playhead" style:left={`${transport.beat / pattern.totalBeats * 100}%`}></div>{/if}
         </div></div>
       </div></div>
       <div class="note-inspector"><div><b>{selectedChord.label}</b><span>{selectedChord.notes.map(noteName).join(' · ')}</span></div><span class="midi-values">MIDI <b>{selectedChord.notes.join(' · ')}</b></span></div>
     </section>
   </main>
-  <footer><div><span class="status-dot" class:lit={connected}></span>{!connected ? 'Browser preview · open the app to send MIDI' : transport.standalone ? 'Chord Runner Output' : 'MIDI → host'}<i>·</i><span>{transport.playing ? `Playing at ${Number(transport.tempo.toFixed(1))} BPM` : transport.armed && pattern.hostSync ? transport.hostAvailable ? 'Waiting for host transport' : 'Host transport unavailable' : 'Stopped'}</span></div><button disabled={!connected} onclick={async () => { await call('panic'); transport = await call('getTransport'); }}>All notes off</button></footer>
+    <section class="arpeggiator" class:bypassed={!pattern.arp.enabled} aria-label="Arpeggiator">
+      <div class="module-heading"><h2>Arpeggiator</h2><span>{pattern.arp.enabled ? pattern.sequencerEnabled ? 'From sequencer' : 'From MIDI input' : 'Bypassed'} · {styles[pattern.arp.style]}</span><button class="hold" class:chosen={pattern.arp.hold} aria-pressed={pattern.arp.hold} disabled={!connected || busy || !pattern.arp.enabled} onclick={() => setArp({hold: !pattern.arp.hold})}>Hold</button></div>
+      <div class="arp-controls">
+        <div class="arp-group">
+          <label class="control">STYLE<select aria-label="Arpeggiator style" value={pattern.arp.style} disabled={!connected || busy || !pattern.arp.enabled} onchange={e => setArp({style: Number(e.currentTarget.value)})}>{#each styles as style, i}<option value={i}>{style}</option>{/each}</select></label>
+          <label class="control">OFFSET<input aria-label="Pattern offset" type="number" min="0" max="128" value={pattern.arp.offset} disabled={!connected || busy || !pattern.arp.enabled} onchange={e => setArp({offset: Number(e.currentTarget.value)})}/></label>
+          <label class="control">REPEATS<select aria-label="Pattern repeats" value={pattern.arp.repeats} disabled={!connected || busy || !pattern.arp.enabled} onchange={e => setArp({repeats: Number(e.currentTarget.value)})}><option value={0}>∞</option>{#each Array.from({length: 64}, (_, i) => i + 1) as n}<option value={n}>{n}</option>{/each}</select></label>
+        </div>
+        <div class="arp-group">
+          <label class="control">RATE MODE<select aria-label="Arpeggiator rate mode" value={pattern.arp.sync ? 'sync' : 'free'} disabled={!connected || busy || !pattern.arp.enabled} onchange={e => setArp({sync: e.currentTarget.value === 'sync'})}><option value="sync">Sync</option><option value="free">Free</option></select></label>
+          {#if pattern.arp.sync}<label class="control">RATE<select aria-label="Arpeggiator synced rate" value={pattern.arp.rate} disabled={!connected || busy || !pattern.arp.enabled} onchange={e => setArp({rate: Number(e.currentTarget.value)})}>{#each rates as rate}<option value={rate.value}>{rate.label}</option>{/each}</select></label>
+          {:else}<label class="control">RATE · MS<input aria-label="Arpeggiator free rate" type="number" min="10" max="2000" value={pattern.arp.freeMs} disabled={!connected || busy || !pattern.arp.enabled} onchange={e => setArp({freeMs: Number(e.currentTarget.value)})}/></label>{/if}
+          <label class="control">GATE · %<input aria-label="Arpeggiator gate" type="number" min="1" max="200" value={pattern.arp.gate} disabled={!connected || busy || !pattern.arp.enabled} onchange={e => setArp({gate: Number(e.currentTarget.value)})}/></label>
+          <label class="control">SWING · %<input aria-label="Arpeggiator swing" type="number" min="0" max="50" value={pattern.arp.swing} disabled={!connected || busy || !pattern.arp.enabled} onchange={e => setArp({swing: Number(e.currentTarget.value)})}/></label>
+        </div>
+        <div class="arp-group">
+          <label class="control">STEPS<input aria-label="Transposition steps" type="number" min="0" max="8" value={pattern.arp.steps} disabled={!connected || busy || !pattern.arp.enabled} onchange={e => setArp({steps: Number(e.currentTarget.value)})}/></label>
+          <label class="control">DISTANCE · ST<input aria-label="Transposition distance" type="number" min="-36" max="36" value={pattern.arp.distance} disabled={!connected || busy || !pattern.arp.enabled} onchange={e => setArp({distance: Number(e.currentTarget.value)})}/></label>
+          <label class="control">RETRIGGER<select aria-label="Arpeggiator retrigger" value={pattern.arp.retrigger} disabled={!connected || busy || !pattern.arp.enabled} onchange={e => setArp({retrigger: Number(e.currentTarget.value)})}><option value={0}>Off</option><option value={1}>Note</option><option value={2}>Beat</option></select></label>
+          <label class="control">INTERVAL · BEATS<input aria-label="Retrigger interval" type="number" min="0.0625" max="64" step="0.25" value={pattern.arp.interval} disabled={!connected || busy || !pattern.arp.enabled || pattern.arp.retrigger !== 2} onchange={e => setArp({interval: Number(e.currentTarget.value)})}/></label>
+        </div>
+        <div class="arp-group velocity-group">
+          <button class="hold" class:chosen={pattern.arp.velocityEnabled} aria-pressed={pattern.arp.velocityEnabled} disabled={!connected || busy || !pattern.arp.enabled} onclick={() => setArp({velocityEnabled: !pattern.arp.velocityEnabled})}>Velocity</button>
+          <label class="control">TARGET<input aria-label="Velocity target" type="number" min="0" max="127" value={pattern.arp.target} disabled={!connected || busy || !pattern.arp.enabled || !pattern.arp.velocityEnabled} onchange={e => setArp({target: Number(e.currentTarget.value)})}/></label>
+          <label class="control">DECAY · MS<input aria-label="Velocity decay" type="number" min="1" max="60000" value={pattern.arp.decay} disabled={!connected || busy || !pattern.arp.enabled || !pattern.arp.velocityEnabled} onchange={e => setArp({decay: Number(e.currentTarget.value)})}/></label>
+          <button class="hold" class:chosen={pattern.arp.velocityRetrigger} aria-pressed={pattern.arp.velocityRetrigger} disabled={!connected || busy || !pattern.arp.enabled || !pattern.arp.velocityEnabled} onclick={() => setArp({velocityRetrigger: !pattern.arp.velocityRetrigger})}>Retrigger velocity</button>
+        </div>
+      </div>
+    </section>
+  <footer><div><span class="status-dot" class:lit={connected}></span>{!connected ? 'Browser preview · open the app to send MIDI' : transport.standalone ? 'Chord Runner Output' : 'MIDI → host'}<i>·</i><span>{!pattern.sequencerEnabled ? pattern.arp.enabled ? pattern.hostSync && !transport.playing ? 'Waiting for host transport' : 'Arpeggiating MIDI input' : 'MIDI thru' : transport.playing ? `Playing at ${Number(transport.tempo.toFixed(1))} BPM` : transport.armed && pattern.hostSync ? transport.hostAvailable ? 'Waiting for host transport' : 'Host transport unavailable' : 'Stopped'}</span></div><button disabled={!connected} onclick={async () => { await call('panic'); transport = await call('getTransport'); }}>All notes off</button></footer>
 </div>

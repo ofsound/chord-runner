@@ -1,6 +1,6 @@
 # Chord Runner
 
-**Chord Runner by ofsound** is a MIDI chord-pattern generator. Type `C - G - Am - F`, press Apply, then Play. The native engine turns the shorthand into absolute MIDI notes and holds each chord for its duration. There is no audio instrument or DSP; route its MIDI to a synth.
+**Chord Runner by ofsound** is a MIDI chord sequencer and arpeggiator. Type `C - G - Am - F`, press Apply, then Play. The native engine turns the shorthand into absolute MIDI notes and holds each chord for its duration. There is no audio instrument or DSP; route its MIDI to a synth.
 
 Built with **JUCE 9.0.1**, C++23, CMake/Ninja, Catch2, and an embedded **Svelte 5 / Vite / Tailwind** editor. The structure follows the sibling KSH and MIDI Phrases projects. This scaffold targets **Standalone, AU, and VST3** on macOS. AUv3, CLAP, mobile, inversions and advanced composition tools are not part of this first pass.
 
@@ -41,15 +41,41 @@ Local builds target the current architecture. Add `-DCMAKE_OSX_ARCHITECTURES="ar
 
 ## Transport and routing
 
-Internal mode is the default in every format. Play starts at the beginning, Stop releases held notes and resets the timeline. Playback loops. All notes off also disarms playback. Incoming MIDI is not passed through.
+Internal mode is the default in every format. Play starts at the beginning, Stop releases held notes and resets the timeline. Playback loops. All notes off also disarms playback. The Sequencer and Arpeggiator switches are independent:
 
-**Standalone:** the custom JUCE holder creates **Chord Runner Output**, a virtual MIDI source on macOS. Select that source in a DAW or synth. JUCE's Options → Audio/MIDI Settings selects the audio device used to clock processing. Audio output is always silent. Quitting detaches the audio callback and flushes the MIDI output.
+| Sequencer | Arpeggiator | MIDI output |
+| --- | --- | --- |
+| On | Off | Generated chord progression; incoming MIDI ignored |
+| On | On | Generated progression through the arpeggiator; incoming MIDI ignored |
+| Off | On | Arpeggiated incoming notes, preserving their channels and velocities |
+| Off | Off | Incoming MIDI passed through with its timestamps |
+
+The arpeggiator stays visible below the sequencer. Its controls are grayed out while bypassed; the sequencer scrolls above it in smaller windows. Play/Stop controls the sequencer. With the sequencer off and the internal clock selected, the arpeggiator responds immediately to MIDI input without pressing Play. Switching modules, host bypass and All notes off release held output notes and clear latched arpeggios. Host bypass passes incoming MIDI through.
+
+**Standalone:** the custom JUCE holder creates **Chord Runner Output**, a virtual MIDI source on macOS. Select that source in a DAW or synth. JUCE's Options → Audio/MIDI Settings selects the audio device used to clock processing. Enable your MIDI keyboard in the same Audio/MIDI Settings dialog to feed the arpeggiator. Audio output is always silent. Quitting detaches the audio callback and flushes the MIDI output.
 
 **Plugins:** MIDI goes to the host. The AU is a MIDI effect; the VST3 uses the same Fx/Instrument classification and silent compatibility bus as the siblings. For Ableton Live, use VST3 on a source MIDI track and route the plugin's MIDI to a second track containing the instrument. Host routing and transport capabilities vary; some hosts only process plugins while their own transport runs.
 
-**Host sync:** select Host sync and Arm. Playback follows host tempo and quarter-note position, including seeks and host loops. Stop disarms the plugin. If host timing is unavailable, the plugin remains silent. Fixed 4/4 shorthand durations are independent of the host's time signature. Restoring a project is stopped until explicitly armed or played.
+**Host sync:** select Host sync and Arm. Playback follows host tempo and quarter-note position, including seeks and host loops. Stop disarms the plugin. If host timing is unavailable or stopped, generated notes remain silent. This also applies to input arpeggiation when Host sync is selected; MIDI thru remains available. Fixed 4/4 shorthand durations are independent of the host's time signature. Restoring a project is stopped until explicitly armed or played.
 
-Open/Save use `.chordrunner` JSON project files. Plugin sessions and standalone settings persist the progression, tempo, channel, velocity, octave and clock mode, but never resume playback automatically.
+Open/Save use `.chordrunner` JSON project files. Plugin sessions and standalone settings persist the progression, tempo, channel, velocity, octave, clock mode, module switches and arpeggiator settings, but never resume playback automatically.
+
+## Arpeggiator
+
+Controls follow [Ableton Live’s Arpeggiator reference](https://www.ableton.com/en/manual/live-midi-effect-reference/#arpeggiator), adapted to Chord Runner:
+
+- **Style:** Up, Down, Up & Down, Down & Up, Converge, Diverge, Play Order, Chord Trigger, Random, Random Other and Random Once. Up & Down / Down & Up do not repeat end notes. Random Other draws without replacement each cycle; Random Once repeats its shuffled order until the input notes change.
+- **Rate:** Sync uses quarter-note beat divisions (including dotted and triplet choices), or Free uses 10–2000 ms. Both use the native audio clock.
+- **Gate:** 1–200% of the unswung rate; values above 100% overlap different pitches. Retriggering the same pitch releases its previous voice first.
+- **Swing:** 0–50% alternately lengthens and shortens the step interval, preserving the pair’s duration.
+- **Hold:** releasing keys keeps the pattern. Play a new chord after releasing all keys to replace it. While keys remain pressed, add notes or play an existing note again to remove it. Sustain pedal is consumed by the arp and retains released keys until pedal up.
+- **Offset:** rotates the pattern’s starting position. **Steps** adds up to eight transposed passes; **Distance** sets each pass’s semitone shift (−36 to +36). Notes outside MIDI 0–127 are omitted.
+- **Retrigger:** Off continues the order; Note restarts with a new note; Beat restarts at the selected quarter-note interval. **Repeats** limits full pattern cycles or runs indefinitely at ∞.
+- **Velocity:** moves each source velocity toward Target over Decay milliseconds; Target 0 fades to silence. Retrigger velocity restarts that slope with pattern retriggers.
+
+This implements semitone transposition and local swing; it does not integrate Live’s scale awareness, Groove Pool, or MPE. The timeline continues to show the source chords, not an estimated arpeggio. Settings use schema 2; schema 1 projects load with Sequencer on and Arpeggiator off.
+
+The engine stores up to 128 source notes across MIDI channels and 256 overlapping output voices. MIDI buffers are preallocated for the advertised block size, fastest supported rate, dense note retriggers and chord triggers. Input blocks exceeding 64 KiB are dropped as a whole and held output is released, preventing allocation or stuck notes on oversized input. SysEx and other MIDI pass through within that bound; sustain is handled internally when the arp is active.
 
 ## UI development
 

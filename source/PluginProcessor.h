@@ -42,7 +42,14 @@ private:
     chordrunner::Timeline state;
     chordrunner::SnapshotExchange<chordrunner::Timeline> snapshots;
     chordrunner::TimelineEngine engine;
-    juce::MidiBuffer outgoingMidi, bootstrapMidi;
+    chordrunner::Arpeggiator arpeggiator;
+    juce::MidiBuffer outgoingMidi, bootstrapMidi, sequenceMidi;
+    std::array<bool, 16 * 128> passedNotes {};
+    std::array<bool, 16> passedSustain {};
+    bool previousSequencer = true, previousArp = false, bypassed = false;
+    void releasePassedNotes (juce::MidiBuffer&);
+    void passMidi (const juce::MidiBuffer&, juce::MidiBuffer&);
+    static constexpr int maxInputBytes = 65536;
     bool primeMidiBuffer = true;
     void finishMidiBlock (juce::MidiBuffer&);
     std::atomic<bool> playRequested { false }, resetRequested { false };
