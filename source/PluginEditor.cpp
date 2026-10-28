@@ -1,41 +1,28 @@
 #include "PluginEditor.h"
-#include "WebViewResourceProvider.h"
-
-namespace
-{
-class ChordRunnerBrowser final : public juce::WebBrowserComponent
-{
-public:
-    explicit ChordRunnerBrowser (const Options& options) : WebBrowserComponent (options) {}
-    bool pageAboutToLoad (const juce::String& url) override
-    {
-        return url.startsWith (getResourceProviderRoot()) || url == "about:blank"
-#if JUCE_DEBUG && CHORD_RUNNER_UI_DEV_SERVER
-            || url.startsWith ("http://localhost:5175/")
-#endif
-            ;
-    }
-};
-}
 
 PluginEditor::PluginEditor (PluginProcessor& p) : AudioProcessorEditor (&p), processorRef (p)
 {
-    webView = std::make_unique<ChordRunnerBrowser> (WebViewResources::makeBrowserOptions (processorRef, *this));
-    addAndMakeVisible (*webView);
+    nativeView = std::make_unique<chordrunner::ui::NativeEditor> (p);
+    addAndMakeVisible (*nativeView);
+    nativeView->chooseProject = [this] (bool save)
+    {
+        chooseProject (save, [safe = juce::Component::SafePointer<PluginEditor> (this)] (juce::String error)
+        {
+            if (safe == nullptr)
+                return;
+            safe->nativeView->controller.error = error;
+            safe->nativeView->controller.refresh();
+        });
+    };
     setResizable (true, true);
     setResizeLimits (760, 540, 2560, 1600);
     setSize (1120, 900);
-#if JUCE_DEBUG && CHORD_RUNNER_UI_DEV_SERVER
-    webView->goToURL ("http://localhost:5175/");
-#else
-    webView->goToURL (juce::WebBrowserComponent::getResourceProviderRoot());
-#endif
 }
 
-void PluginEditor::paint (juce::Graphics& g) { g.fillAll (juce::Colour (0xff09090b)); }
-void PluginEditor::resized() { if (webView != nullptr) webView->setBounds (getLocalBounds()); }
+void PluginEditor::paint (juce::Graphics& g) { g.fillAll (juce::Colour (0xff101114)); }
+void PluginEditor::resized() { if (nativeView != nullptr) nativeView->setBounds (getLocalBounds()); }
 
-void PluginEditor::chooseProject (bool save, juce::WebBrowserComponent::NativeFunctionCompletion complete)
+void PluginEditor::chooseProject (bool save, std::function<void (juce::String)> complete)
 {
     if (chooser != nullptr)
     {
@@ -74,7 +61,11 @@ void PluginEditor::chooseProject (bool save, juce::WebBrowserComponent::NativeFu
             {
                 const auto result = safe->processorRef.setTimelineState (juce::JSON::parse (file.loadFileAsString()));
                 error = result.getErrorMessage();
-                if (result.wasOk()) safe->processorRef.setPlaying (false);
+                if (result.wasOk())
+                {
+                    safe->processorRef.setPlaying (false);
+                    safe->nativeView->controller.refresh (true);
+                }
             }
         }
         completion (error);

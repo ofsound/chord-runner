@@ -29,8 +29,5 @@ cmake-build-release
 cmake-build-relwithdebinfo
 packaging/Output/*
 # Frontend and generated resources
-ui/node_modules/
-ui/dist/
-assets/webview/ui.zip
 .env
 Builds-*/

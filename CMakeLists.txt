@@ -22,14 +22,11 @@ if(APPLE)
     list(APPEND FORMATS AU)
 endif()
 option(CHORD_RUNNER_COPY_PLUGINS "Install plugins in user plugin folders after building" ON)
-option(CHORD_RUNNER_UI_DEV_SERVER "Use Vite on port 5175 in Debug" OFF)
 juce_add_plugin(${PROJECT_NAME}
     COMPANY_NAME "${COMPANY_NAME}"
     BUNDLE_ID "${BUNDLE_ID}"
     ICON_BIG "${CMAKE_CURRENT_SOURCE_DIR}/packaging/icon.png"
     COPY_PLUGIN_AFTER_BUILD ${CHORD_RUNNER_COPY_PLUGINS}
-    NEEDS_WEB_BROWSER TRUE
-    NEEDS_WEBVIEW2 TRUE
     PLUGIN_MANUFACTURER_CODE Osnd
     PLUGIN_CODE Crn1
     FORMATS ${FORMATS}
@@ -48,12 +45,9 @@ add_library(SharedCode INTERFACE)
 target_compile_features(SharedCode INTERFACE cxx_std_23)
 file(GLOB_RECURSE SourceFiles CONFIGURE_DEPENDS "source/*.cpp" "source/*.h")
 target_sources(SharedCode INTERFACE ${SourceFiles})
-include(WebViewUI)
-juce_add_binary_data(Assets SOURCES "${WEBVIEW_ZIP}")
-add_dependencies(Assets WebViewUIBuild)
+juce_add_binary_data(Assets SOURCES "assets/chords.json")
 target_compile_definitions(SharedCode INTERFACE
-    JUCE_WEB_BROWSER=1 JUCE_USE_CURL=0 JUCE_VST3_CAN_REPLACE_VST2=0
-    CHORD_RUNNER_UI_DEV_SERVER=$<BOOL:${CHORD_RUNNER_UI_DEV_SERVER}>
+    JUCE_WEB_BROWSER=0 JUCE_USE_CURL=0 JUCE_VST3_CAN_REPLACE_VST2=0
     CMAKE_BUILD_TYPE="$<CONFIG>" VERSION="${CURRENT_VERSION}"
     PRODUCT_NAME_WITHOUT_VERSION="${PRODUCT_NAME}")
 target_link_libraries(SharedCode INTERFACE

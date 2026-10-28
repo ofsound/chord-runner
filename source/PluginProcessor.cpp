@@ -198,7 +198,7 @@ juce::var PluginProcessor::getTimelineState() const
 {
     const juce::ScopedLock lock (stateLock);
     auto object = std::make_unique<juce::DynamicObject>();
-    object->setProperty ("schema", 2);
+    object->setProperty ("schema", 3);
     object->setProperty ("app", "Chord Runner");
     object->setProperty ("progression", progression);
     object->setProperty ("tempo", state.tempo);
@@ -264,7 +264,7 @@ bool numberInRange (const juce::var& value, double low, double high, bool integr
 juce::Result PluginProcessor::setTimelineState (const juce::var& value)
 {
     if (! value.isObject() || value["app"].toString() != "Chord Runner"
-        || ! numberInRange (value["schema"], 1, 2)
+        || ! numberInRange (value["schema"], 1, 3)
         || ! numberInRange (value["tempo"], 20, 300, false)
         || ! numberInRange (value["channel"], 1, 16)
         || ! numberInRange (value["velocity"], 1, 127)
@@ -277,7 +277,7 @@ juce::Result PluginProcessor::setTimelineState (const juce::var& value)
     next.velocity = static_cast<int> (value["velocity"]);
     next.octave = static_cast<int> (value["octave"]);
     next.hostSync = static_cast<bool> (value["hostSync"]);
-    if (static_cast<int> (value["schema"]) == 2)
+    if (static_cast<int> (value["schema"]) >= 2)
     {
         const auto arp = value["arp"];
         if (! value["sequencerEnabled"].isBool() || ! arp.isObject()
@@ -321,8 +321,10 @@ juce::Result PluginProcessor::setTimelineState (const juce::var& value)
         next.arp.interval = static_cast<double> (arp["interval"]);
         next.arp.decay = static_cast<double> (arp["decay"]);
     }
-    const auto text = value["progression"].toString();
-    const auto result = chordrunner::parseProgression (text, next);
+    auto text = value["progression"].toString();
+    const auto result = static_cast<int> (value["schema"]) < 3
+        ? chordrunner::migrateLegacyProgression (text, next, text)
+        : chordrunner::parseProgression (text, next);
     if (result.failed())
         return result;
     {

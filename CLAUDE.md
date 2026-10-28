@@ -1,6 +1,6 @@
 # Chord Runner contributor guide
 
-Chord Runner by ofsound is a MIDI-only chord-pattern generator built with JUCE 9, C++23, CMake, Catch2 and a Svelte 5 WebView. `AGENTS.md` is a symlink to this file.
+Chord Runner by ofsound is a MIDI-only chord-pattern generator built with JUCE 9, C++23, CMake, Catch2 and a native JUCE editor. `AGENTS.md` is a symlink to this file.
 
 ## Configuration
 
@@ -19,13 +19,11 @@ git submodule update --init --recursive
 cmake -B Builds -G Ninja -DCMAKE_BUILD_TYPE=Debug
 cmake --build Builds --parallel 4
 ctest --test-dir Builds --output-on-failure
-npm run check --prefix ui
-npm run dev --prefix ui
 ```
 
 After source, UI, or build changes, build **all formats**. Reconfigure when CMake changes. Fix all warnings in owned code before finishing; CMake enforces warnings as errors for source, standalone and tests. Do not edit vendored dependencies to silence warnings.
 
-CMake builds the UI from the npm lockfile and embeds `assets/webview/ui.zip`. Debug defaults to embedded UI. Opt into Vite with `CHORD_RUNNER_UI_DEV_SERVER=ON`, port **5175**. Disable automatic user-folder plugin installation with `CHORD_RUNNER_COPY_PLUGINS=OFF` when needed.
+The editor is native JUCE C++ in `source/ui/`; there is no WebView, JavaScript bridge, npm build or dev server. Disable automatic user-folder plugin installation with `CHORD_RUNNER_COPY_PLUGINS=OFF` when needed.
 
 ## Product and syntax
 
@@ -45,4 +43,4 @@ Sessions use versioned, validated JSON. Restore stopped. Keep single default pro
 
 ## Style
 
-C++: Allman braces, four spaces, repository `.clang-format`. Svelte 5: runes, `onclick`, callback props. No Svelte 4 local stores, `$:` or `on:event`. Keep native integration in the bridge and implementation details out of the visible product UI. Reuse sibling project conventions where useful, without modifying those projects.
+C++: Allman braces, four spaces, repository `.clang-format`. Use native JUCE controls and keep processor mutations in the message-thread editor controller. Keep implementation details out of the visible product UI. Reuse sibling project conventions where useful, without modifying those projects.

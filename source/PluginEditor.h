@@ -1,6 +1,6 @@
 #pragma once
 #include "PluginProcessor.h"
-#include <juce_gui_extra/juce_gui_extra.h>
+#include "ui/NativeEditor.h"
 
 class PluginEditor : public juce::AudioProcessorEditor
 {
@@ -9,11 +9,11 @@ public:
     ~PluginEditor() override = default;
     void paint (juce::Graphics&) override;
     void resized() override;
-    void chooseProject (bool save, juce::WebBrowserComponent::NativeFunctionCompletion);
+    void chooseProject (bool save, std::function<void (juce::String)>);
 
 private:
     PluginProcessor& processorRef;
     std::unique_ptr<juce::FileChooser> chooser;
-    std::unique_ptr<juce::WebBrowserComponent> webView;
+    std::unique_ptr<chordrunner::ui::NativeEditor> nativeView;
     JUCE_DECLARE_NON_COPYABLE_WITH_LEAK_DETECTOR (PluginEditor)
 };

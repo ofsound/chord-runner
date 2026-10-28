@@ -12,7 +12,7 @@ constexpr int maxNotes = 8;
 struct Chord
 {
     std::array<int, maxNotes> notes { 60, 64, 67 };
-    std::array<char, 32> label { 'C', '\0' };
+    std::array<char, 64> label { 'C', '\0' };
     int noteCount = 3;
     double beats = 4.0;
 };
@@ -46,6 +46,10 @@ struct Timeline
 
 // Call only from non-audio threads. Invalid text leaves the supplied timeline intact.
 juce::Result parseProgression (const juce::String&, Timeline&);
+// Older sessions used extension numbers such as C9 as bar durations.
+juce::Result migrateLegacyProgression (const juce::String&, Timeline&, juce::String& migratedText);
+// Shared with the editor glossary through assets/chords.json; never called from audio.
+const juce::var& chordVocabulary();
 
 // Producers serialize outside the callback. Three fixed slots let the audio
 // consumer take the latest value without allocation, locks, or dropped edits.

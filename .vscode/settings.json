@@ -1,7 +1,10 @@
 {
   "cmake.buildDirectory": "${workspaceFolder}/Builds",
   "cmake.generator": "Ninja",
-  "cmake.configureSettings": { "CMAKE_BUILD_TYPE": "Debug" },
+  "cmake.configureSettings": {
+    "CMAKE_BUILD_TYPE": "Debug",
+    "CHORD_RUNNER_COPY_PLUGINS": "ON"
+  },
   "cmake.configureOnOpen": false,
   "C_Cpp.default.configurationProvider": "ms-vscode.cmake-tools"
 }
