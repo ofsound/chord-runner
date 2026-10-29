@@ -1,6 +1,6 @@
 # JUCE generates AppIcon.icns once at configure time; rebuilds do not notice packaging/icon.png changes.
 # Regenerate the .icns when the source PNG changes so Standalone picks up new artwork.
-if(NOT APPLE OR NOT TARGET juce::juceaide)
+if(NOT APPLE OR CMAKE_SYSTEM_NAME STREQUAL "iOS" OR NOT TARGET juce::juceaide)
     return()
 endif()
 
@@ -22,7 +22,7 @@ add_custom_command(
 
 add_custom_target(${PROJECT_NAME}_AppIcon DEPENDS "${_pamplejuce_icon_icns}")
 
-foreach(_pamplejuce_icon_target ${PROJECT_NAME}_Standalone ${PROJECT_NAME}_AU ${PROJECT_NAME}_VST3)
+foreach(_pamplejuce_icon_target ${PROJECT_NAME}_Standalone ${PROJECT_NAME}_AU ${PROJECT_NAME}_VST3 ${PROJECT_NAME}_AUv3)
     if(TARGET ${_pamplejuce_icon_target})
         add_dependencies(${_pamplejuce_icon_target} ${PROJECT_NAME}_AppIcon)
     endif()

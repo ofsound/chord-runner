@@ -2,7 +2,7 @@
 
 **Chord Runner by ofsound** is a MIDI chord sequencer and arpeggiator. Type `C - G - Am - F`, press Apply, then Play. The native engine turns the shorthand into absolute MIDI notes and holds each chord for its duration. There is no audio instrument or DSP; route its MIDI to a synth.
 
-Built with **JUCE 9.0.1**, C++23, CMake/Ninja, Catch2, and a **native JUCE** editor. The structure follows the sibling KSH and MIDI Phrases projects. This scaffold targets **Standalone, AU, and VST3** on macOS. AUv3, CLAP, mobile, inversions and advanced composition tools are not part of this first pass.
+Built with **JUCE 9.0.1**, C++23, CMake/Ninja, Catch2, and a **native JUCE** editor. The structure follows the sibling KSH and MIDI Phrases projects. Targets **Standalone, AU, and VST3** on macOS, with **AUv3** available through Xcode. The initial iOS port builds a universal **iPhone/iPad app with an embedded AUv3 MIDI extension** (iOS 15+). CLAP, inversions and advanced composition tools are outside this first pass.
 
 ## Build and run
 
@@ -101,3 +101,29 @@ After editing source or build files, run `cmake --build Builds --parallel 4` and
 - `cmake/`: unchanged Pamplejuce helpers; `cmake_project/`: application-specific build integration.
 
 See `AGENTS.md` / `CLAUDE.md` for contributor requirements.
+
+## Xcode and iOS development
+
+Generate and open the macOS project:
+
+```sh
+cmake --preset macos-xcode
+open Builds-Xcode/ChordRunner.xcodeproj
+```
+
+Generate the universal iPhone/iPad project, following KSH's app + AUv3 structure:
+
+```sh
+cmake --preset ios-xcode
+open Builds-iOS/ChordRunner.xcodeproj
+```
+
+Select **ChordRunner_Standalone** and an iPhone or iPad simulator, then Run. The app embeds **ChordRunner_AUv3** automatically. A command-line simulator build is also available:
+
+```sh
+cmake --build --preset ios-simulator
+```
+
+For a physical device, choose your development team in Signing & Capabilities for **both** Standalone and AUv3, select the connected device, and Run. To keep signing configuration through regeneration, configure with `-DCMAKE_XCODE_ATTRIBUTE_DEVELOPMENT_TEAM=YOUR_TEAM_ID -DCMAKE_XCODE_ATTRIBUTE_CODE_SIGN_STYLE=Automatic`. Generated projects live in ignored build folders; CMake is the source of truth.
+
+The initial phone layout uses scrollable sections for chords, timing, pitch and velocity, with Play/Stop and All Notes Off pinned below the scroll area. Both orientations are enabled. iPad uses the wider layout where space permits; narrow host windows adapt too. Standalone publishes **Chord Runner Output** through virtual MIDI on iOS, with background audio enabled; the AUv3 sends MIDI to its host. This is an initial development port: physical-device MIDI routing, AUv3 host integration, keyboard/orientation behavior and performance still need device testing.

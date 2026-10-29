@@ -9,6 +9,7 @@ public:
     ~PluginEditor() override = default;
     void paint (juce::Graphics&) override;
     void resized() override;
+    void parentHierarchyChanged() override { resized(); }
     void chooseProject (bool save, std::function<void (juce::String)>);
 
 private:

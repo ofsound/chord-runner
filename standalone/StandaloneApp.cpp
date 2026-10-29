@@ -84,7 +84,7 @@ private:
 
     void createVirtualMidiOutput()
     {
-       #if JUCE_MAC || JUCE_LINUX || JUCE_BSD
+       #if JUCE_MAC || JUCE_IOS || JUCE_LINUX || JUCE_BSD
         virtualMidiOutput = MidiOutput::createNewDevice (virtualMidiOutputName);
        #endif
 
@@ -205,6 +205,17 @@ public:
         mainWindow = nullptr;
         appProperties.saveIfNeeded();
     }
+
+   #if JUCE_IOS
+    void suspended() override
+    {
+        // The OS may terminate a backgrounded app without calling shutdown().
+        auto* holder = mainWindow != nullptr ? mainWindow->pluginHolder.get() : pluginHolder.get();
+        if (holder != nullptr)
+            holder->savePluginState();
+        appProperties.saveIfNeeded();
+    }
+   #endif
 
     void systemRequestedQuit() override
     {

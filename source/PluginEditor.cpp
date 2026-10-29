@@ -15,12 +15,33 @@ PluginEditor::PluginEditor (PluginProcessor& p) : AudioProcessorEditor (&p), pro
         });
     };
     setResizable (true, true);
+   #if JUCE_IOS
+    setResizeLimits (280, 240, 2560, 2560);
+    if (const auto* display = juce::Desktop::getInstance().getDisplays().getPrimaryDisplay())
+        setSize (juce::jmin (1120, juce::roundToInt (display->userBounds.getWidth())), juce::jmin (900, juce::roundToInt (display->userBounds.getHeight())));
+    else
+        setSize (390, 700);
+   #else
     setResizeLimits (760, 540, 2560, 1600);
     setSize (1120, 900);
+   #endif
 }
 
 void PluginEditor::paint (juce::Graphics& g) { g.fillAll (juce::Colour (0xff101114)); }
-void PluginEditor::resized() { if (nativeView != nullptr) nativeView->setBounds (getLocalBounds()); }
+void PluginEditor::resized()
+{
+    auto bounds = getLocalBounds();
+   #if JUCE_IOS
+    if (processorRef.isStandalone())
+        if (const auto* display = juce::Desktop::getInstance().getDisplays().getDisplayForRect (getScreenBounds()))
+        {
+            const auto safeScreen = display->safeAreaInsets.subtractedFrom (display->userBounds.toNearestInt());
+            bounds = bounds.getIntersection (getLocalArea (nullptr, safeScreen));
+        }
+   #endif
+    if (nativeView != nullptr)
+        nativeView->setBounds (bounds);
+}
 
 void PluginEditor::chooseProject (bool save, std::function<void (juce::String)> complete)
 {

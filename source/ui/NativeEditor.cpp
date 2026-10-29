@@ -263,12 +263,18 @@ void ChordGlossary::resized()
     title.setBounds (area.removeFromTop (34));
     hint.setBounds (area.removeFromTop (66));
     area.removeFromTop (8);
-    auto filters = area.removeFromTop (32);
+    auto filters = area.removeFromTop (getWidth() < 500 ? 88 : 32);
+    if (getWidth() < 500)
+    {
+        search.setBounds (filters.removeFromTop (40));
+        filters.removeFromTop (8);
+    }
     root.setBounds (filters.removeFromRight (75));
     filters.removeFromRight (8);
-    family.setBounds (filters.removeFromRight (180));
+    family.setBounds (filters.removeFromRight (juce::jmin (180, filters.getWidth())));
     filters.removeFromRight (8);
-    search.setBounds (filters);
+    if (getWidth() >= 500)
+        search.setBounds (filters);
     count.setBounds (area.removeFromTop (30));
     auto actions = area.removeFromBottom (32);
     close.setBounds (actions.removeFromRight (90));
@@ -344,7 +350,11 @@ NativeEditor::NativeEditor (PluginProcessor& processor) : controller (processor)
     addAndMakeVisible (viewport);
     viewport.setViewedComponent (&content, false);
     viewport.setScrollBarsShown (true, false);
+   #if JUCE_IOS
+    viewport.setScrollOnDragMode (juce::Viewport::ScrollOnDragMode::nonHover);
+   #else
     viewport.setScrollOnDragMode (juce::Viewport::ScrollOnDragMode::never);
+   #endif
     for (auto* component : std::initializer_list<juce::Component*> { &open, &save, &glossary, &status, &panicButton })
         addAndMakeVisible (component);
     for (auto* component : std::initializer_list<juce::Component*> { &sequencer, &arpeggiator, &progression, &apply, &example, &message, &play, &tempo, &clock, &octave, &velocity, &channel, &timelineViewport, &summary, &hold })
@@ -562,6 +572,7 @@ void NativeEditor::showGlossary()
         safe->controller.draft = existing.isEmpty() ? text : existing + " - " + text;
         safe->progression.setText (safe->controller.draft);
     });
+    panel->setSize (juce::jmin (760, getWidth() - 24), juce::jmin (580, getHeight() - 40));
     options.content.setOwned (panel);
     options.dialogTitle = "Chord glossary";
     options.dialogBackgroundColour = background;
@@ -600,7 +611,7 @@ void NativeEditor::paint (juce::Graphics& g)
     g.setColour (muted);
     g.drawText ("ofsound", 202, 15, 90, 28, juce::Justification::centredLeft);
     g.setColour (border);
-    g.drawHorizontalLine (57, 0, static_cast<float> (getWidth()));
+    g.drawHorizontalLine (getWidth() < 760 ? 108 : 57, 0, static_cast<float> (getWidth()));
     g.drawHorizontalLine (getHeight() - 37, 0, static_cast<float> (getWidth()));
 }
 void NativeEditor::updateTimelineSize()
@@ -612,47 +623,80 @@ void NativeEditor::updateTimelineSize()
 }
 void NativeEditor::resized()
 {
-    auto header = getLocalBounds().removeFromTop (57).reduced (20, 12);
-    glossary.setBounds (header.removeFromRight (130));
+    const bool narrow = getWidth() < 760;
+    const int headerHeight = narrow ? 108 : 57;
+    auto header = getLocalBounds().withY (narrow ? 52 : 0).withHeight (narrow ? 52 : 57).reduced (16, 6);
+    glossary.setBounds (header.removeFromRight (narrow ? 126 : 130));
     header.removeFromRight (8);
     save.setBounds (header.removeFromRight (66));
     header.removeFromRight (8);
     open.setBounds (header.removeFromRight (66));
-    auto footer = getLocalBounds().removeFromBottom (36).reduced (20, 5);
-    panicButton.setBounds (footer.removeFromRight (115));
-    status.setBounds (footer);
-    viewport.setBounds (16, 67, getWidth() - 32, getHeight() - 111);
-    const int contentHeight = juce::jmax (740, viewport.getHeight());
+    auto footer = getLocalBounds().removeFromBottom (narrow ? 84 : 36).reduced (16, 4);
+    if (narrow)
+    {
+        status.setBounds (footer.removeFromBottom (30));
+        play.setBounds (footer.removeFromLeft (90));
+        footer.removeFromLeft (8);
+        panicButton.setBounds (footer.removeFromRight (130));
+    }
+    else
+    {
+        panicButton.setBounds (footer.removeFromRight (115));
+        status.setBounds (footer);
+    }
+    // Keep transport within reach while scrolling the phone's control sections.
+    auto* playParent = narrow ? static_cast<juce::Component*> (this) : &content;
+    if (play.getParentComponent() != playParent)
+        playParent->addAndMakeVisible (play);
+    viewport.setBounds (16, headerHeight + 10, getWidth() - 32, juce::jmax (1, getHeight() - headerHeight - (narrow ? 102 : 54)));
+    const int columns = narrow ? (getWidth() < 500 ? 1 : 2) : 4;
+    const int contentHeight = narrow ? (columns == 1 ? 1590 : 1130) : juce::jmax (740, viewport.getHeight());
     content.setSize (viewport.getWidth() - (contentHeight > viewport.getHeight() ? 16 : 0), contentHeight);
     const int w = content.getWidth();
-    sequencer.setBounds (0, 0, 145, 32);
-    arpeggiator.setBounds (155, 0, 145, 32);
-    progression.setBounds (0, 44, w - 94, 40);
-    apply.setBounds (w - 84, 44, 84, 40);
-    example.setBounds (0, 88, 240, 22);
-    message.setBounds (0, 112, w, 22);
-    auto transport = juce::Rectangle<int> (0, 141, w, 54);
-    play.setBounds (transport.removeFromLeft (85).withTrimmedTop (18));
-    transport.removeFromLeft (12);
-    tempo.setBounds (transport.removeFromLeft (juce::jmax (140, w / 5)));
-    transport.removeFromLeft (12);
-    clock.setBounds (transport.removeFromLeft (115));
-    channel.setBounds (transport.removeFromRight (75));
-    transport.removeFromRight (10);
-    velocity.setBounds (transport.removeFromRight (155));
-    transport.removeFromRight (10);
-    octave.setBounds (transport.removeFromRight (70));
-    const int timelineHeight = contentHeight - 514;
-    timelineViewport.setBounds (0, 206, w, timelineHeight);
-    summary.setBounds (0, 206 + timelineHeight, w, 26);
-    const int arpY = 242 + timelineHeight;
-    hold.setBounds (0, arpY, 130, 28);
-    const int groupY = arpY + 36;
+    const int toggleWidth = juce::jmin (145, (w - 10) / 2);
+    sequencer.setBounds (0, 0, toggleWidth, narrow ? 44 : 32);
+    arpeggiator.setBounds (toggleWidth + 10, 0, toggleWidth, narrow ? 44 : 32);
+    progression.setBounds (0, narrow ? 54 : 44, w - 84, 44);
+    apply.setBounds (w - 76, narrow ? 54 : 44, 76, 44);
+    example.setBounds (0, narrow ? 102 : 88, w, 28);
+    message.setBounds (0, narrow ? 134 : 112, w, narrow ? 46 : 22);
+    int timelineY = 206;
+    if (narrow)
+    {
+        const int half = (w - 12) / 2;
+        tempo.setBounds (0, 190, half, 62);
+        clock.setBounds (half + 12, 190, half, 62);
+        octave.setBounds (0, 264, 68, 62);
+        channel.setBounds (80, 264, 68, 62);
+        velocity.setBounds (160, 264, w - 160, 62);
+        timelineY = 340;
+    }
+    else
+    {
+        auto transport = juce::Rectangle<int> (0, 141, w, 54);
+        play.setBounds (transport.removeFromLeft (85).withTrimmedTop (18));
+        transport.removeFromLeft (12);
+        tempo.setBounds (transport.removeFromLeft (juce::jmax (140, w / 5)));
+        transport.removeFromLeft (12);
+        clock.setBounds (transport.removeFromLeft (115));
+        channel.setBounds (transport.removeFromRight (75));
+        transport.removeFromRight (10);
+        velocity.setBounds (transport.removeFromRight (155));
+        transport.removeFromRight (10);
+        octave.setBounds (transport.removeFromRight (70));
+    }
+    const int timelineHeight = narrow ? 200 : contentHeight - 514;
+    timelineViewport.setBounds (0, timelineY, w, timelineHeight);
+    summary.setBounds (0, timelineY + timelineHeight, w, narrow ? 48 : 26);
+    const int arpY = timelineY + timelineHeight + (narrow ? 58 : 36);
+    hold.setBounds (0, arpY, 130, narrow ? 44 : 28);
+    const int groupY = arpY + (narrow ? 56 : 36);
     for (size_t i = 0; i < groups.size(); ++i)
     {
-        const int x = static_cast<int> (i) * w / 4;
-        const int right = (static_cast<int> (i) + 1) * w / 4;
-        groups[i].setBounds (x, groupY, right - x - (i == 3 ? 0 : 8), 222);
+        const int column = static_cast<int> (i) % columns;
+        const int x = column * w / columns;
+        const int right = (column + 1) * w / columns;
+        groups[i].setBounds (x, groupY + static_cast<int> (i) / columns * 230, right - x - (column == columns - 1 ? 0 : 8), 222);
     }
     auto groupArea = [this] (size_t i) { return groups[i].getBounds().reduced (11, 0).withTrimmedTop (22); };
     auto a = groupArea (0);
