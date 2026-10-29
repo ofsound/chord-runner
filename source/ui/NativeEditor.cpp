@@ -34,6 +34,69 @@ void identify (juce::Component& component, const juce::String& id, const juce::S
 }
 }
 
+void ModuleCard::paint (juce::Graphics& g)
+{
+    const auto area = getLocalBounds().toFloat().reduced (0.5f);
+    g.setGradientFill (juce::ColourGradient (juce::Colour (0xff22262c), 0, 0,
+        juce::Colour (0xff181c21), 0, static_cast<float> (getHeight()), false));
+    g.fillRoundedRectangle (area, 10.0f);
+    g.setColour (juce::Colour (0xff363e46));
+    g.drawRoundedRectangle (area, 10.0f, 1.0f);
+    g.setColour (foreground);
+    g.setFont (juce::FontOptions (12.0f).withStyle ("Bold"));
+    g.drawText (title, 62, 7, 170, 30, juce::Justification::centredLeft);
+}
+
+void PerformanceLook::drawButtonBackground (juce::Graphics& g, juce::Button& button, const juce::Colour& colour, bool over, bool down)
+{
+    const auto area = button.getLocalBounds().toFloat().reduced (0.5f);
+    const bool power = button.getComponentID() == "sequencerEnabled" || button.getComponentID() == "arp.enabled";
+    const auto fill = button.getToggleState() ? juce::Colour (0xff27483d) : colour;
+    g.setColour (fill.brighter (down ? 0.14f : over ? 0.07f : 0.0f).withMultipliedAlpha (button.isEnabled() ? 1.0f : 0.4f));
+    g.fillRoundedRectangle (area, power ? 15.0f : 5.0f);
+    g.setColour (button.getToggleState() ? green.withAlpha (0.65f) : border);
+    g.drawRoundedRectangle (area, power ? 15.0f : 5.0f, 1.0f);
+}
+
+void PatternPad::paintButton (juce::Graphics& g, bool over, bool down)
+{
+    const auto area = getLocalBounds().toFloat().reduced (1.0f);
+    g.setColour (active ? juce::Colour (0xff284f43) : selected ? juce::Colour (0xff303c47) : surface);
+    g.fillRoundedRectangle (area, 6.0f);
+    if (over || down)
+    {
+        g.setColour (foreground.withAlpha (down ? 0.12f : 0.05f));
+        g.fillRoundedRectangle (area, 6.0f);
+    }
+    g.setColour (queued ? amber : active ? green : selected ? juce::Colour (0xff8caccc) : border);
+    g.drawRoundedRectangle (area, 6.0f, queued || selected ? 1.5f : 1.0f);
+    g.setFont (juce::FontOptions (14.0f).withStyle ("Bold"));
+    g.setColour (active ? green : foreground);
+    if (getWidth() > 78)
+        g.drawText (juce::String (slot + 1).paddedLeft ('0', 2), 9, 4, 26, getHeight() - 8, juce::Justification::centredLeft);
+    else
+        g.drawText (juce::String (slot + 1).paddedLeft ('0', 2), 4, 4, getWidth() - 8, getHeight() / 2, juce::Justification::centred);
+    if (getWidth() > 78)
+    {
+        g.setFont (juce::FontOptions (11.0f));
+        g.setColour (muted);
+        g.drawText (patternName, 37, 4, getWidth() - 44, 18, juce::Justification::centredLeft);
+        g.setFont (juce::FontOptions (9.0f));
+        g.drawText (juce::MidiMessage::getMidiNoteName (slot, true, true, 5), 37, 22, getWidth() - 44, 14, juce::Justification::centredLeft);
+    }
+    if (getWidth() <= 78)
+    {
+        g.setColour (muted);
+        g.setFont (juce::FontOptions (9.0f));
+        g.drawText (juce::MidiMessage::getMidiNoteName (slot, true, true, 5), 4, getHeight() / 2 + 2, getWidth() - 8, getHeight() / 2 - 6, juce::Justification::centred);
+    }
+    if (queued)
+    {
+        g.setColour (amber);
+        g.fillEllipse (static_cast<float> (getWidth() - 9), 5.0f, 4.0f, 4.0f);
+    }
+}
+
 TimelineView::TimelineView (EditorController& c) : controller (c)
 {
     identify (*this, "timeline", "Chord timeline");
@@ -59,7 +122,7 @@ void TimelineView::paint (juce::Graphics& g)
             }
     lowest = juce::jmax (0, lowest - 2);
     highest = juce::jmin (127, highest + 2);
-    constexpr float keyWidth = 46.0f, top = 66.0f;
+    constexpr float keyWidth = 46.0f, top = 54.0f;
     const auto width = static_cast<float> (getWidth()) - keyWidth;
     const auto rowHeight = (static_cast<float> (getHeight()) - top) / static_cast<float> (highest - lowest + 1);
     const auto xAt = [total, width] (double beat) { return keyWidth + static_cast<float> (beat / total) * width; };
@@ -81,16 +144,17 @@ void TimelineView::paint (juce::Graphics& g)
         const auto& chord = chords->getReference (i);
         const auto x = xAt (static_cast<double> (chord["startBeat"]));
         const auto chordWidth = xAt (static_cast<double> (chord["startBeat"]) + static_cast<double> (chord["beats"])) - x;
-        const bool sounding = sequenceOn && i == active;
+        const bool sounding = sequenceOn && i == active
+            && controller.transport["selectedPattern"] == controller.transport["activePattern"];
         g.setColour (sounding ? juce::Colour (0xff234e3d) : i == selected ? juce::Colour (0xff363a42) : surface);
-        g.fillRect (x, 24.0f, chordWidth - 1.0f, 42.0f);
+        g.fillRect (x, 24.0f, chordWidth - 1.0f, 30.0f);
         g.setColour (sounding ? green : foreground);
         g.setFont (juce::FontOptions (14.0f));
-        g.drawText (chord["label"].toString(), juce::Rectangle<float> (x + 6, 26, chordWidth - 10, 21), juce::Justification::centredLeft);
+        g.drawText (chord["label"].toString(), juce::Rectangle<float> (x + 6, 23, chordWidth - 10, 18), juce::Justification::centredLeft);
         g.setFont (juce::FontOptions (10.0f));
         g.setColour (muted);
         g.drawText (juce::String (static_cast<double> (chord["beats"]) / 4.0, 2) + " bars",
-                    juce::Rectangle<float> (x + 6, 46, chordWidth - 10, 17), juce::Justification::centredLeft);
+                    juce::Rectangle<float> (x + 6, 40, chordWidth - 10, 14), juce::Justification::centredLeft);
         if (const auto* notes = chord["notes"].getArray())
             for (const auto& note : *notes)
             {
@@ -298,13 +362,14 @@ NativeEditor::NumberControl::NumberControl (const juce::String& id, const juce::
     slider.setTextValueSuffix (unit);
     slider.setDoubleClickReturnValue (true, initial);
     slider.setScrollWheelEnabled (false);
-    slider.setChangeNotificationOnlyOnRelease (true);
+    slider.setChangeNotificationOnlyOnRelease (false);
     slider.setTooltip (name + ": drag to adjust, click the value to type, double-click to reset.");
 }
 void NativeEditor::NumberControl::resized()
 {
     auto area = getLocalBounds();
-    label.setBounds (area.removeFromTop (18));
+    const auto* editor = findParentComponentOfClass<NativeEditor>();
+    label.setBounds (area.removeFromTop (editor != nullptr && editor->phoneLayout ? 16 : 18));
     slider.setBounds (area);
 }
 NativeEditor::ChoiceControl::ChoiceControl (const juce::String& id, const juce::String& name, const juce::StringArray& items)
@@ -318,8 +383,10 @@ NativeEditor::ChoiceControl::ChoiceControl (const juce::String& id, const juce::
 void NativeEditor::ChoiceControl::resized()
 {
     auto area = getLocalBounds();
-    label.setBounds (area.removeFromTop (18));
-    combo.setBounds (area.reduced (0, 2));
+    const auto* editor = findParentComponentOfClass<NativeEditor>();
+    const bool touch = editor != nullptr && editor->phoneLayout;
+    label.setBounds (area.removeFromTop (touch ? 16 : 18));
+    combo.setBounds (area.reduced (0, touch ? 1 : 2));
 }
 NativeEditor::NativeEditor (PluginProcessor& processor) : controller (processor), timeline (controller)
 {
@@ -359,13 +426,13 @@ NativeEditor::NativeEditor (PluginProcessor& processor) : controller (processor)
         addAndMakeVisible (component);
     for (auto* component : std::initializer_list<juce::Component*> { &sequencer, &arpeggiator, &progression, &apply, &example, &message, &play, &tempo, &clock, &octave, &velocity, &channel, &timelineViewport, &summary, &hold })
         content.addAndMakeVisible (component);
-    const juce::StringArray groupNames { "PATTERN", "TIMING", "PITCH", "VELOCITY" };
+    const juce::StringArray groupNames { "ORDER", "TIMING", "PITCH", "HUMANIZE", "ENVELOPE" };
     for (size_t i = 0; i < groups.size(); ++i)
     {
         groups[i].setText (groupNames[static_cast<int> (i)]);
         content.addAndMakeVisible (groups[i]);
     }
-    for (auto* component : std::initializer_list<juce::Component*> { &style, &offset, &repeats, &rateMode, &rate, &freeRate, &gate, &swing, &steps, &distance, &retrigger, &interval, &velocityEnabled, &target, &decay, &velocityRetrigger })
+    for (auto* component : std::initializer_list<juce::Component*> { &style, &offset, &repeats, &rateMode, &rate, &freeRate, &gate, &swing, &swingSubdivision, &velocityHumanize, &timingHumanize, &steps, &distance, &retrigger, &interval, &velocityEnabled, &target, &decay, &velocityRetrigger })
         content.addAndMakeVisible (component);
     timelineViewport.setViewedComponent (&timeline, false);
     timelineViewport.setScrollBarsShown (false, true);
@@ -397,7 +464,7 @@ NativeEditor::NativeEditor (PluginProcessor& processor) : controller (processor)
     play.onClick = [this] { controller.togglePlay(); };
     panicButton.onClick = [this] { controller.panic(); };
     open.onClick = [this] { if (chooseProject) chooseProject (false); };
-    save.onClick = [this] { if ((! controller.dirty() || controller.applyDraft()) && chooseProject) chooseProject (true); };
+    save.onClick = [this] { if ((! controller.dirty() || controller.applyDraft()) && chooseProject) chooseProject (1); };
     glossary.onClick = [this] { showGlossary(); };
     channel.combo.addItemList ({ "1", "2", "3", "4", "5", "6", "7", "8", "9", "10", "11", "12", "13", "14", "15", "16" }, 1);
     bind (tempo, "tempo");
@@ -410,6 +477,9 @@ NativeEditor::NativeEditor (PluginProcessor& processor) : controller (processor)
     bind (freeRate, "freeMs", true);
     bind (gate, "gate", true);
     bind (swing, "swing", true);
+    bind (swingSubdivision, "swingSubdivision", true);
+    bind (velocityHumanize, "velocityHumanize", true);
+    bind (timingHumanize, "timingHumanize", true);
     bind (steps, "steps", true);
     bind (distance, "distance", true);
     bind (retrigger, "retrigger", true);
@@ -419,6 +489,7 @@ NativeEditor::NativeEditor (PluginProcessor& processor) : controller (processor)
     freeRate.slider.setSkewFactorFromMidPoint (200);
     decay.slider.setSkewFactorFromMidPoint (1000);
     repeats.slider.textFromValueFunction = [] (double value) { return value < 0.5 ? juce::String ("Infinite") : juce::String (static_cast<int> (value)); };
+    repeats.slider.updateText();
     repeats.slider.valueFromTextFunction = [] (const juce::String& text) { return text.containsIgnoreCase ("inf") ? 0.0 : text.getDoubleValue(); };
     rateMode.combo.onChange = [this] { if (! syncing) controller.set ("sync", rateMode.combo.getSelectedId() == 1, true); };
     clock.combo.onChange = [this] { if (! syncing) controller.set ("hostSync", clock.combo.getSelectedId() == 2); };
@@ -441,6 +512,97 @@ NativeEditor::NativeEditor (PluginProcessor& processor) : controller (processor)
     toggle (velocityRetrigger, "velocityRetrigger", true);
     for (auto* label : { &message, &status, &summary })
         labelStyle (*label, "");
+    // Each power control belongs to the module it enables.
+    content.addAndMakeVisible (sequenceModule);
+    content.addAndMakeVisible (arpModule);
+    for (auto* component : std::initializer_list<juce::Component*> { &sequencer, &progression, &apply, &message, &timelineViewport, &summary, &patternName, &fit, &patternMenu, &glossary })
+        sequenceModule.addAndMakeVisible (component);
+    example.setVisible (false);
+    for (auto* component : std::initializer_list<juce::Component*> { &arpeggiator, &style, &offset, &repeats, &rateMode, &rate, &freeRate, &gate, &swing, &swingSubdivision, &steps, &distance, &retrigger, &interval, &hold, &velocityEnabled, &target, &decay, &velocityRetrigger, &velocityHumanize, &timingHumanize })
+        arpModule.addAndMakeVisible (component);
+    for (auto& group : groups)
+        arpModule.addAndMakeVisible (group);
+    for (auto* component : std::initializer_list<juce::Component*> { &projectTitle, &projectMenu, &undoButton, &redoButton, &mutePad, &launch, &tempo, &clock, &octave, &velocity, &channel, &play })
+        addAndMakeVisible (component);
+    open.setVisible (false);
+    save.setVisible (false);
+    identify (projectMenu, "project.menu", "Project menu");
+    identify (projectTitle, "project.details", "Project details");
+    identify (undoButton, "undo", "Undo last edit");
+    identify (redoButton, "redo", "Redo last edit");
+    identify (fit, "timeline.fit", "Fit progression in view");
+    identify (mutePad, "pattern.mute", "Mute pattern / MIDI note 16");
+    identify (patternName, "pattern.name", "Pattern name");
+    patternName.setEditable (false, true);
+    patternName.setColour (juce::Label::textColourId, muted);
+    patternName.onTextChange = [this]
+    {
+        if (! syncing)
+        {
+            controller.processor.renamePattern (controller.processor.selectedPattern(), patternName.getText());
+            controller.refresh();
+        }
+    };
+    patternMenu.onClick = [this] { showPatternMenu(); };
+    projectMenu.onClick = [this] { showProjectMenu(); };
+    projectTitle.onClick = [this] { showProjectDetails(); };
+    undoButton.onClick = [this] { controller.undo(); };
+    redoButton.onClick = [this] { controller.redo(); };
+    mutePad.setClickingTogglesState (false);
+    mutePad.onClick = [this] { controller.selectPattern (-1); };
+    launch.combo.onChange = [this]
+    {
+        if (! syncing)
+        {
+            controller.processor.setLaunchMode (launch.combo.getSelectedId() - 1);
+            controller.refresh();
+        }
+    };
+    fit.setClickingTogglesState (true);
+    fit.setToggleState (true, juce::dontSendNotification);
+    fit.onClick = [this] { fitNotes = fit.getToggleState(); updateTimelineSize(); };
+    for (int i = 0; i < 16; ++i)
+    {
+        auto& pad = pads[static_cast<size_t> (i)];
+        pad.slot = i;
+        identify (pad, "pattern." + juce::String (i + 1), "Pattern " + juce::String (i + 1));
+        pad.setTooltip ("Launch pattern " + juce::String (i + 1) + " / "
+            + juce::MidiMessage::getMidiNoteName (i, true, true, 5) + " (MIDI " + juce::String (i) + ")");
+        pad.onClick = [this, i]
+        {
+            if (juce::ModifierKeys::getCurrentModifiers().isShiftDown() && controller.processor.selectedPattern() >= 0)
+            {
+                if (! controller.dirty() || controller.applyDraft())
+                    controller.processor.copyPattern (controller.processor.selectedPattern(), i);
+                controller.refresh();
+            }
+            else controller.selectPattern (i);
+        };
+        addAndMakeVisible (pad);
+    }
+    swing.slider.setTooltip ("KSH swing: delays alternate groups by up to half a subdivision.");
+    timingHumanize.slider.setTooltip ("KSH timing humanize: independent early/late offsets, up to 20% of the step duration.");
+    velocityHumanize.slider.setTooltip ("KSH velocity humanize: random variation relative to each note's velocity.");
+    const juce::StringArray phonePages { "Perform", "Sequence", "Arp", "Groove" };
+    for (int i = 0; i < 4; ++i)
+    {
+        auto& tab = phoneTabs[static_cast<size_t> (i)];
+        tab.setButtonText (phonePages[i]);
+        identify (tab, "phone.page." + juce::String (i), phonePages[i] + " page");
+        tab.onClick = [this, i]
+        {
+            phonePage = i;
+            if (phoneLayout) layoutPhone();
+        };
+        addChildComponent (tab);
+    }
+    identify (viewport, "body.viewport", "Editor controls");
+    identify (sequenceModule, "sequence.module", "Sequence module");
+    identify (arpModule, "arp.module", "Arpeggiator module");
+    performanceInfo.setFont (juce::FontOptions (14.0f));
+    performanceInfo.setColour (juce::Label::textColourId, foreground);
+    performanceInfo.setJustificationType (juce::Justification::centredLeft);
+    addChildComponent (performanceInfo);
     addKeyListener (this);
     controller.changed = [this] { sync(); };
     sync();
@@ -459,6 +621,8 @@ NativeEditor::~NativeEditor()
 void NativeEditor::bind (NumberControl& control, const juce::Identifier& key, bool arp)
 {
     numbers.push_back (&control);
+    control.slider.onDragStart = [this] { controller.processor.endEditGesture(); };
+    control.slider.onDragEnd = [this] { controller.processor.endEditGesture(); };
     control.slider.onValueChange = [this, &control, key, arp]
     {
         if (! syncing)
@@ -489,7 +653,10 @@ void NativeEditor::sync()
     {
         lastRevision = revision;
         if (progression.getText() != controller.draft)
+        {
             progression.setText (controller.draft, false);
+            if (! progression.hasKeyboardFocus (true)) progression.setCaretPosition (0);
+        }
         for (auto* control : numbers)
         {
             const auto id = control->slider.getComponentID();
@@ -511,8 +678,36 @@ void NativeEditor::sync()
         rate.combo.setSelectedId (rateId, juce::dontSendNotification);
         if (rateId == 0)
             rate.combo.setText (arp["rate"].toString() + " beats", juce::dontSendNotification);
+        swingSubdivision.combo.setSelectedId (static_cast<int> (arp["swingSubdivision"]) + 1, juce::dontSendNotification);
+        launch.combo.setSelectedId (controller.processor.getLaunchMode() + 1, juce::dontSendNotification);
+        bankState = controller.processor.getProjectState();
+        projectModified = controller.processor.isDocumentModified();
+        patternName.setText (state["patternName"].toString(), juce::dontSendNotification);
         updateTimelineSize();
     }
+    projectTitle.setButtonText (state["projectName"].toString() + (projectModified ? "  *" : ""));
+    undoButton.setEnabled (controller.processor.canUndo());
+    redoButton.setEnabled (controller.processor.canRedo());
+    const int selectedSlot = static_cast<int> (transport["selectedPattern"]);
+    sequenceModule.setEnabled (selectedSlot >= 0);
+    arpModule.setEnabled (selectedSlot >= 0);
+    octave.setEnabled (selectedSlot >= 0);
+    velocity.setEnabled (selectedSlot >= 0);
+    channel.setEnabled (selectedSlot >= 0);
+    const int activeSlot = static_cast<int> (transport["activePattern"]);
+    const int queuedSlot = static_cast<int> (transport["queuedPattern"]);
+    for (int i = 0; i < 16; ++i)
+    {
+        auto& pad = pads[static_cast<size_t> (i)];
+        pad.active = i == activeSlot;
+        pad.queued = i == queuedSlot;
+        pad.selected = i == selectedSlot;
+        pad.patternName = bankState["patterns"][i]["name"].toString();
+        pad.repaint();
+    }
+    mutePad.setToggleState (selectedSlot < 0, juce::dontSendNotification);
+    sequencer.setButtonText (sequenceOn ? "ON" : "OFF");
+    arpeggiator.setButtonText (arpOn ? "ON" : "OFF");
     // Draft changes and validation failures do not increment the processor revision.
     if (! progression.hasKeyboardFocus (true) && progression.getText() != controller.draft)
         progression.setText (controller.draft, false);
@@ -525,7 +720,7 @@ void NativeEditor::sync()
     play.setButtonText (static_cast<bool> (transport["armed"]) ? "Stop" : host ? "Arm" : "Play");
     tempo.setEnabled (! host);
     clock.setEnabled (! standalone);
-    for (auto* component : std::initializer_list<juce::Component*> { &style, &offset, &repeats, &rateMode, &rate, &freeRate, &gate, &swing, &steps, &distance, &retrigger, &hold, &velocityEnabled })
+    for (auto* component : std::initializer_list<juce::Component*> { &style, &offset, &repeats, &rateMode, &rate, &freeRate, &gate, &swing, &swingSubdivision, &velocityHumanize, &timingHumanize, &steps, &distance, &retrigger, &hold, &velocityEnabled })
         component->setEnabled (arpOn);
     interval.setEnabled (arpOn && static_cast<int> (arp["retrigger"]) == 2);
     const bool envelopeOn = arpOn && static_cast<bool> (arp["velocityEnabled"]);
@@ -543,6 +738,8 @@ void NativeEditor::sync()
         transportText = "Playing at " + juce::String (static_cast<double> (transport["tempo"]), 1) + " BPM";
     else if (host && static_cast<bool> (transport["armed"]))
         transportText = static_cast<bool> (transport["hostAvailable"]) ? "Waiting for host transport" : "Host transport unavailable";
+    if (queuedSlot != -2)
+        transportText += queuedSlot < 0 ? "  /  Mute queued" : "  /  P" + juce::String (queuedSlot + 1) + " queued";
     status.setText ((standalone ? juce::String ("Chord Runner Output") : juce::String ("MIDI to host")) + "  |  " + transportText, juce::dontSendNotification);
     if (const auto* chords = state["chords"].getArray(); chords != nullptr && ! chords->isEmpty())
     {
@@ -553,6 +750,14 @@ void NativeEditor::sync()
                 noteNames.add (noteName (static_cast<int> (note)));
         summary.setText (chord["label"].toString() + "   " + noteNames.joinIntoString ("  ") + "     MIDI " + joined (chord["notes"], ", ")
             + "     |     " + juce::String (chords->size()) + " chords / " + juce::String (static_cast<double> (state["totalBeats"]) / 4.0, 2) + " bars", juce::dontSendNotification);
+    }
+    performanceInfo.setText ((selectedSlot < 0 ? juce::String ("Muted") : "P" + juce::String (selectedSlot + 1).paddedLeft ('0', 2)
+        + "  " + state["patternName"].toString()) + "\n" + state["progression"].toString(), juce::dontSendNotification);
+    if (phoneLayout)
+    {
+        status.setText (queuedSlot != -2 ? (queuedSlot < 0 ? juce::String ("Mute queued") : "P" + juce::String (queuedSlot + 1) + " queued")
+            : (activeSlot < 0 ? juce::String ("Muted") : "P" + juce::String (activeSlot + 1)) + (static_cast<bool> (transport["playing"]) ? "  Playing" : "  Stopped"), juce::dontSendNotification);
+        layoutPhone();
     }
     timeline.repaint();
 }
@@ -585,6 +790,25 @@ void NativeEditor::showGlossary()
 }
 bool NativeEditor::keyPressed (const juce::KeyPress& key, juce::Component* origin)
 {
+    const bool command = key.getModifiers().isCommandDown() || key.getModifiers().isCtrlDown();
+    if (command && (key.getKeyCode() == 'Z' || key.getKeyCode() == 'z'))
+    {
+        if (auto* text = dynamic_cast<juce::TextEditor*> (origin); text != nullptr)
+            return false;
+        if (key.getModifiers().isShiftDown()) controller.redo(); else controller.undo();
+        return true;
+    }
+    if (command && (key.getKeyCode() == 'S' || key.getKeyCode() == 's'))
+    {
+        if ((! controller.dirty() || controller.applyDraft()) && chooseProject)
+            chooseProject (key.getModifiers().isShiftDown() ? 2 : 1);
+        return true;
+    }
+    if (command && (key.getKeyCode() == 'O' || key.getKeyCode() == 'o'))
+    {
+        if (chooseProject) chooseProject (0);
+        return true;
+    }
     if (key.getKeyCode() == juce::KeyPress::returnKey && (key.getModifiers().isCommandDown() || key.getModifiers().isCtrlDown()))
     {
         controller.applyDraft();
@@ -605,126 +829,143 @@ void NativeEditor::paint (juce::Graphics& g)
 {
     g.fillAll (background);
     g.setColour (foreground);
-    g.setFont (juce::FontOptions (22.0f));
-    g.drawText ("Chord Runner", 20, 12, 180, 32, juce::Justification::centredLeft);
-    g.setFont (juce::FontOptions (12.0f));
+    g.setFont (juce::FontOptions (phoneLayout ? 12.0f : 18.0f).withStyle ("Bold"));
+    if (! phoneLayout || getWidth() <= getHeight())
+        g.drawText ("CHORD RUNNER", phoneLayout ? 12 : 18, phoneLayout ? 3 : 10, 165, phoneLayout ? 18 : 24, juce::Justification::centredLeft);
+    g.setFont (juce::FontOptions (10.0f));
     g.setColour (muted);
-    g.drawText ("ofsound", 202, 15, 90, 28, juce::Justification::centredLeft);
+    if (! phoneLayout)
+        g.drawText ("ofsound  /  MIDI PERFORMANCE", 19, 32, 190, 16, juce::Justification::centredLeft);
     g.setColour (border);
-    g.drawHorizontalLine (getWidth() < 760 ? 108 : 57, 0, static_cast<float> (getWidth()));
-    g.drawHorizontalLine (getHeight() - 37, 0, static_cast<float> (getWidth()));
+    g.drawHorizontalLine (55, 16, static_cast<float> (getWidth() - 16));
+    g.drawHorizontalLine (getHeight() - 46, 16, static_cast<float> (getWidth() - 16));
 }
+
 void NativeEditor::updateTimelineSize()
 {
     const auto* chords = controller.state["chords"].getArray();
     const int count = chords != nullptr ? chords->size() : 1;
-    const int width = juce::jmax (timelineViewport.getWidth(), 46 + count * 95);
-    timeline.setSize (width, juce::jmax (100, timelineViewport.getHeight() - (width > timelineViewport.getWidth() ? 14 : 0)));
+    const int width = fitNotes ? timelineViewport.getWidth() : juce::jmax (timelineViewport.getWidth(), 46 + count * 95);
+    timeline.setSize (juce::jmax (60, width), juce::jmax (phoneLayout ? 60 : 80, timelineViewport.getHeight() - (width > timelineViewport.getWidth() ? 14 : 0)));
 }
+
 void NativeEditor::resized()
 {
-    const bool narrow = getWidth() < 760;
-    const int headerHeight = narrow ? 108 : 57;
-    auto header = getLocalBounds().withY (narrow ? 52 : 0).withHeight (narrow ? 52 : 57).reduced (16, 6);
-    glossary.setBounds (header.removeFromRight (narrow ? 126 : 130));
-    header.removeFromRight (8);
-    save.setBounds (header.removeFromRight (66));
-    header.removeFromRight (8);
-    open.setBounds (header.removeFromRight (66));
-    auto footer = getLocalBounds().removeFromBottom (narrow ? 84 : 36).reduced (16, 4);
-    if (narrow)
+    const bool compact = getWidth() < 700 || (getHeight() <= 500 && getWidth() <= 1100);
+    if (compact)
     {
-        status.setBounds (footer.removeFromBottom (30));
-        play.setBounds (footer.removeFromLeft (90));
-        footer.removeFromLeft (8);
-        panicButton.setBounds (footer.removeFromRight (130));
+        phoneLayout = true;
+        layoutPhone();
+        return;
+    }
+    restoreDesktopParents();
+    phoneLayout = false;
+    const int w = getWidth();
+    const bool phone = w < 700;
+    const int margin = phone ? 10 : 16;
+    auto header = juce::Rectangle<int> (phone ? 10 : 210, phone ? 56 : 8, w - (phone ? 20 : 226), 38);
+    redoButton.setBounds (header.removeFromRight (52)); header.removeFromRight (5);
+    undoButton.setBounds (header.removeFromRight (52)); header.removeFromRight (8);
+    projectMenu.setBounds (header.removeFromRight (72)); header.removeFromRight (8);
+    projectTitle.setBounds (header);
+    const int padTop = phone ? 108 : 56;
+    const int padColumns = phone ? 4 : 8;
+    const int padWidth = (w - margin * 2 - 60) / padColumns;
+    for (int i = 0; i < 16; ++i)
+        pads[static_cast<size_t> (i)].setBounds (margin + (i % padColumns) * padWidth, padTop + (i / padColumns) * 42, padWidth - 4, 40);
+    mutePad.setBounds (w - margin - 54, padTop, 54, phone ? 180 : 88);
+    const int transportY = padTop + (phone ? 186 : 90);
+    auto row = juce::Rectangle<int> (margin, transportY, w - margin * 2, phone ? 112 : 56);
+    if (phone)
+    {
+        auto top = row.removeFromTop (56);
+        tempo.setBounds (top.removeFromLeft (top.getWidth() / 2).reduced (0, 0).withTrimmedRight (8));
+        clock.setBounds (top);
+        row.removeFromTop (6);
     }
     else
     {
-        panicButton.setBounds (footer.removeFromRight (115));
-        status.setBounds (footer);
+        tempo.setBounds (row.removeFromLeft (juce::jmax (140, w / 6))); row.removeFromLeft (10);
+        clock.setBounds (row.removeFromLeft (110)); row.removeFromLeft (10);
     }
-    // Keep transport within reach while scrolling the phone's control sections.
-    auto* playParent = narrow ? static_cast<juce::Component*> (this) : &content;
-    if (play.getParentComponent() != playParent)
-        playParent->addAndMakeVisible (play);
-    viewport.setBounds (16, headerHeight + 10, getWidth() - 32, juce::jmax (1, getHeight() - headerHeight - (narrow ? 102 : 54)));
-    const int columns = narrow ? (getWidth() < 500 ? 1 : 2) : 4;
-    const int contentHeight = narrow ? (columns == 1 ? 1590 : 1130) : juce::jmax (740, viewport.getHeight());
-    content.setSize (viewport.getWidth() - (contentHeight > viewport.getHeight() ? 16 : 0), contentHeight);
-    const int w = content.getWidth();
-    const int toggleWidth = juce::jmin (145, (w - 10) / 2);
-    sequencer.setBounds (0, 0, toggleWidth, narrow ? 44 : 32);
-    arpeggiator.setBounds (toggleWidth + 10, 0, toggleWidth, narrow ? 44 : 32);
-    progression.setBounds (0, narrow ? 54 : 44, w - 84, 44);
-    apply.setBounds (w - 76, narrow ? 54 : 44, 76, 44);
-    example.setBounds (0, narrow ? 102 : 88, w, 28);
-    message.setBounds (0, narrow ? 134 : 112, w, narrow ? 46 : 22);
-    int timelineY = 206;
-    if (narrow)
+    launch.setBounds (row.removeFromRight (phone ? 110 : 130)); row.removeFromRight (10);
+    channel.setBounds (row.removeFromRight (phone ? 62 : 72)); row.removeFromRight (10);
+    octave.setBounds (row.removeFromRight (phone ? 62 : 72)); row.removeFromRight (10);
+    velocity.setBounds (row);
+    const int bodyTop = transportY + (phone ? 126 : 60);
+    viewport.setBounds (margin, bodyTop, w - margin * 2, juce::jmax (40, getHeight() - bodyTop - 50));
+    auto footer = getLocalBounds().removeFromBottom (42).reduced (margin, 3);
+    play.setBounds (footer.removeFromLeft (90)); footer.removeFromLeft (12);
+    panicButton.setBounds (footer.removeFromRight (phone ? 105 : 120)); footer.removeFromRight (10);
+    status.setBounds (footer);
+    const int columns = w >= 1000 ? 5 : w >= 700 ? 3 : w >= 500 ? 2 : 1;
+    const int groupRows = (5 + columns - 1) / columns;
+    const int arpHeight = 44 + groupRows * 188;
+    const int minimumSequence = 224;
+    const int minimumHeight = minimumSequence + 12 + arpHeight;
+    const int contentHeight = juce::jmax (minimumHeight, viewport.getHeight());
+    content.setSize (viewport.getWidth() - (contentHeight > viewport.getHeight() ? 14 : 0), contentHeight);
+    const int cw = content.getWidth();
+    const int sequenceHeight = contentHeight - arpHeight - 12;
+    sequenceModule.setBounds (0, 0, cw, sequenceHeight);
+    arpModule.setBounds (0, sequenceHeight + 12, cw, arpHeight);
+    sequencer.setBounds (14, 8, 40, 28);
+    auto moduleHeader = juce::Rectangle<int> (230, 7, juce::jmax (0, cw - 244), 30);
+    patternMenu.setBounds (moduleHeader.removeFromRight (75)); moduleHeader.removeFromRight (6);
+    fit.setBounds (moduleHeader.removeFromRight (42)); moduleHeader.removeFromRight (6);
+    glossary.setBounds (moduleHeader.removeFromRight (64));
+    patternName.setBounds (moduleHeader);
+    patternName.setVisible (cw >= 700);
+    glossary.setVisible (cw >= 650);
+    if (cw < 650)
     {
-        const int half = (w - 12) / 2;
-        tempo.setBounds (0, 190, half, 62);
-        clock.setBounds (half + 12, 190, half, 62);
-        octave.setBounds (0, 264, 68, 62);
-        channel.setBounds (80, 264, 68, 62);
-        velocity.setBounds (160, 264, w - 160, 62);
-        timelineY = 340;
+        patternMenu.setBounds (cw - 89, 7, 75, 30);
+        fit.setBounds (cw - 137, 7, 42, 30);
     }
-    else
-    {
-        auto transport = juce::Rectangle<int> (0, 141, w, 54);
-        play.setBounds (transport.removeFromLeft (85).withTrimmedTop (18));
-        transport.removeFromLeft (12);
-        tempo.setBounds (transport.removeFromLeft (juce::jmax (140, w / 5)));
-        transport.removeFromLeft (12);
-        clock.setBounds (transport.removeFromLeft (115));
-        channel.setBounds (transport.removeFromRight (75));
-        transport.removeFromRight (10);
-        velocity.setBounds (transport.removeFromRight (155));
-        transport.removeFromRight (10);
-        octave.setBounds (transport.removeFromRight (70));
-    }
-    const int timelineHeight = narrow ? 200 : contentHeight - 514;
-    timelineViewport.setBounds (0, timelineY, w, timelineHeight);
-    summary.setBounds (0, timelineY + timelineHeight, w, narrow ? 48 : 26);
-    const int arpY = timelineY + timelineHeight + (narrow ? 58 : 36);
-    hold.setBounds (0, arpY, 130, narrow ? 44 : 28);
-    const int groupY = arpY + (narrow ? 56 : 36);
+    progression.setBounds (14, 47, cw - 108, 42);
+    apply.setBounds (cw - 86, 47, 72, 42);
+    message.setBounds (14, 92, cw - 28, 22);
+    timelineViewport.setBounds (14, 115, cw - 28, sequenceHeight - 144);
+    summary.setBounds (14, sequenceHeight - 27, cw - 28, 22);
+    arpeggiator.setBounds (14, 8, 40, 28);
+    hold.setBounds (cw - 124, 8, 110, 28);
     for (size_t i = 0; i < groups.size(); ++i)
     {
-        const int column = static_cast<int> (i) % columns;
-        const int x = column * w / columns;
-        const int right = (column + 1) * w / columns;
-        groups[i].setBounds (x, groupY + static_cast<int> (i) / columns * 230, right - x - (column == columns - 1 ? 0 : 8), 222);
+        const int col = static_cast<int> (i) % columns;
+        const int x = 10 + col * (cw - 20) / columns;
+        const int right = 10 + (col + 1) * (cw - 20) / columns;
+        groups[i].setBounds (x, 44 + static_cast<int> (i) / columns * 188, right - x - 5, 184);
     }
-    auto groupArea = [this] (size_t i) { return groups[i].getBounds().reduced (11, 0).withTrimmedTop (22); };
+    auto groupArea = [this] (size_t i) { return groups[i].getBounds().reduced (10, 0).withTrimmedTop (19); };
     auto a = groupArea (0);
-    style.setBounds (a.removeFromTop (54)); a.removeFromTop (7);
-    offset.setBounds (a.removeFromTop (54)); a.removeFromTop (7);
-    repeats.setBounds (a.removeFromTop (54));
+    style.setBounds (a.removeFromTop (48)); a.removeFromTop (6);
+    offset.setBounds (a.removeFromTop (48)); a.removeFromTop (6);
+    repeats.setBounds (a.removeFromTop (48));
     a = groupArea (1);
-    auto row = a.removeFromTop (54);
-    rateMode.setBounds (row.removeFromLeft (row.getWidth() * 2 / 5)); row.removeFromLeft (7);
-    rate.setBounds (row); freeRate.setBounds (row);
-    a.removeFromTop (7); gate.setBounds (a.removeFromTop (54));
-    a.removeFromTop (7); swing.setBounds (a.removeFromTop (54));
+    auto timing = a.removeFromTop (48);
+    rateMode.setBounds (timing.removeFromLeft (65)); timing.removeFromLeft (6);
+    rate.setBounds (timing); freeRate.setBounds (timing);
+    a.removeFromTop (6); gate.setBounds (a.removeFromTop (48));
+    a.removeFromTop (6); swing.setBounds (a.removeFromTop (48));
     a = groupArea (2);
-    steps.setBounds (a.removeFromTop (54)); a.removeFromTop (7);
-    distance.setBounds (a.removeFromTop (54)); a.removeFromTop (7);
-    row = a.removeFromTop (54);
-    retrigger.setBounds (row.removeFromLeft (row.getWidth() * 2 / 5)); row.removeFromLeft (7);
-    interval.setBounds (row);
+    steps.setBounds (a.removeFromTop (48)); a.removeFromTop (6);
+    distance.setBounds (a.removeFromTop (48)); a.removeFromTop (6);
+    auto pitch = a.removeFromTop (48);
+    retrigger.setBounds (pitch.removeFromLeft (65)); pitch.removeFromLeft (6);
+    interval.setBounds (pitch);
     a = groupArea (3);
-    velocityEnabled.setBounds (a.removeFromTop (27)); a.removeFromTop (6);
-    target.setBounds (a.removeFromTop (54)); a.removeFromTop (5);
-    decay.setBounds (a.removeFromTop (54)); a.removeFromTop (8);
+    swingSubdivision.setBounds (a.removeFromTop (48)); a.removeFromTop (6);
+    velocityHumanize.setBounds (a.removeFromTop (48)); a.removeFromTop (6);
+    timingHumanize.setBounds (a.removeFromTop (48));
+    a = groupArea (4);
+    velocityEnabled.setBounds (a.removeFromTop (27)); a.removeFromTop (4);
+    target.setBounds (a.removeFromTop (48)); a.removeFromTop (4);
+    decay.setBounds (a.removeFromTop (48)); a.removeFromTop (6);
     velocityRetrigger.setBounds (a.removeFromTop (28));
-    // Narrow timing/interval controls use direct numeric entry without a tiny rail.
     freeRate.slider.setSliderStyle (juce::Slider::IncDecButtons);
     interval.slider.setSliderStyle (juce::Slider::IncDecButtons);
-    freeRate.slider.setTextBoxStyle (juce::Slider::TextBoxAbove, false, 90, 23);
-    interval.slider.setTextBoxStyle (juce::Slider::TextBoxAbove, false, 90, 23);
+    freeRate.slider.setTextBoxStyle (juce::Slider::TextBoxAbove, false, 76, 25);
+    interval.slider.setTextBoxStyle (juce::Slider::TextBoxAbove, false, 76, 25);
     updateTimelineSize();
 }
 }

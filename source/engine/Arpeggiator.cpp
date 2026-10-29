@@ -12,6 +12,14 @@ unsigned Arpeggiator::randomNumber()
     return seed;
 }
 
+double Arpeggiator::grooveRandom()
+{
+    grooveSeed ^= grooveSeed << 13;
+    grooveSeed ^= grooveSeed >> 17;
+    grooveSeed ^= grooveSeed << 5;
+    return static_cast<double> (grooveSeed) / 4294967296.0;
+}
+
 void Arpeggiator::stop (juce::MidiBuffer& output, int sample, bool clearKeys)
 {
     for (int i = 0; i < voiceCount; ++i)
@@ -19,7 +27,7 @@ void Arpeggiator::stop (juce::MidiBuffer& output, int sample, bool clearKeys)
         const auto& voice = voices[static_cast<size_t> (i)];
         output.addEvent (juce::MidiMessage::noteOff (voice.channel, voice.note), sample);
     }
-    voiceCount = 0;
+    voiceCount = pendingCount = 0;
     if (clearKeys)
     {
         keyCount = orderCount = 0;
@@ -33,7 +41,8 @@ void Arpeggiator::stop (juce::MidiBuffer& output, int sample, bool clearKeys)
 void Arpeggiator::restart (bool velocity)
 {
     step = 0;
-    next = clock;
+    pendingCount = 0;
+    next = nominalNext = clock;
     if (velocity)
         velocityStart = clock;
 }
@@ -52,6 +61,18 @@ void Arpeggiator::rebuild()
     shuffle = order;
     for (int i = keyCount - 1; i > 0; --i)
         std::swap (shuffle[static_cast<size_t> (i)], shuffle[randomNumber() % static_cast<unsigned> (i + 1)]);
+}
+
+void Arpeggiator::schedule (const Key& key, int transpose, const ArpeggiatorSettings& settings, double duration)
+{
+    if (pendingCount >= static_cast<int> (pending.size()))
+        return;
+    const auto subdivision = static_cast<juce::uint64> (1u << juce::jlimit (0, 2, settings.swingSubdivision));
+    const double swingDelay = (step / subdivision) % 2 != 0
+        ? static_cast<double> (subdivision) * 0.5 * settings.swing / 100.0 : 0.0;
+    const double jitter = settings.timingHumanize > 0
+        ? (grooveRandom() * 2.0 - 1.0) * 0.2 * settings.timingHumanize / 100.0 : 0.0;
+    pending[static_cast<size_t> (pendingCount++)] = { key, transpose, nominalNext + duration * (swingDelay + jitter), duration };
 }
 
 void Arpeggiator::emit (const Key& key, int transpose, const ArpeggiatorSettings& settings, double duration,
@@ -75,6 +96,9 @@ void Arpeggiator::emit (const Key& key, int transpose, const ArpeggiatorSettings
         const auto fraction = juce::jlimit (0.0, 1.0, (clock - velocityStart) / (sampleRate * settings.decay / 1000.0));
         velocity = juce::roundToInt (key.velocity + (settings.target - key.velocity) * fraction);
     }
+    if (settings.velocityHumanize > 0 && velocity > 0)
+        velocity = juce::jlimit (1, 127, juce::roundToInt (velocity + (grooveRandom() * 2.0 - 1.0)
+            * velocity * settings.velocityHumanize / 100.0));
     if (velocity <= 0 || voiceCount >= static_cast<int> (voices.size()))
         return;
     output.addEvent (juce::MidiMessage::noteOn (key.channel, note, static_cast<juce::uint8> (velocity)), sample);
@@ -257,8 +281,31 @@ void Arpeggiator::render (const ArpeggiatorSettings& settings, const juce::MidiB
                 retriggerBucket = bucket;
             }
         }
+        auto flushPending = [&]
+        {
+            int remaining = 0;
+            for (int i = 0; i < pendingCount; ++i)
+            {
+                const auto hit = pending[static_cast<size_t> (i)];
+                if (clock + 1.0e-7 < hit.at)
+                {
+                    pending[static_cast<size_t> (remaining++)] = hit;
+                    continue;
+                }
+                const bool present = std::any_of (keys.begin(), keys.begin() + keyCount, [&] (const Key& key)
+                {
+                    return key.note == hit.key.note && key.channel == hit.key.channel;
+                });
+                if (present)
+                    emit (hit.key, hit.transpose, settings, hit.duration, sampleRate, sampleMidi, sample);
+            }
+            pendingCount = remaining;
+        };
+        flushPending();
         if (keyCount == 0 || currentBeat < -1.0e-9 || clock + 1.0e-7 < next)
             continue;
+        if (step == 0 || clock - nominalNext > duration)
+            nominalNext = clock;
         const int baseLength = settings.style == ArpeggiatorSettings::chordTrigger ? 1
             : (settings.style == ArpeggiatorSettings::upDown || settings.style == ArpeggiatorSettings::downUp)
                 ? juce::jmax (1, 2 * keyCount - 2) : keyCount;
@@ -288,19 +335,22 @@ void Arpeggiator::render (const ArpeggiatorSettings& settings, const juce::MidiB
                 std::swap (shuffle[static_cast<size_t> (i)], shuffle[randomNumber() % static_cast<unsigned> (i + 1)]);
         if (settings.style == ArpeggiatorSettings::chordTrigger)
             for (int i = 0; i < keyCount; ++i)
-                emit (keys[static_cast<size_t> (order[static_cast<size_t> (i)])], transpose, settings, duration, sampleRate, sampleMidi, sample);
+                schedule (keys[static_cast<size_t> (order[static_cast<size_t> (i)])], transpose, settings, duration);
         else
         {
             const int keyIndex = settings.style == ArpeggiatorSettings::playOrder ? index
                 : settings.style == ArpeggiatorSettings::randomOther || settings.style == ArpeggiatorSettings::randomOnce
                     ? shuffle[static_cast<size_t> (index)] : order[static_cast<size_t> (index)];
-            emit (keys[static_cast<size_t> (keyIndex)], transpose, settings, duration, sampleRate, sampleMidi, sample);
+            schedule (keys[static_cast<size_t> (keyIndex)], transpose, settings, duration);
         }
-        // Preroll may postpone the first event; never catch up with a burst.
-        if (clock - next > 1.0)
-            next = clock;
-        next += duration * (1.0 + (step % 2 == 0 ? settings.swing : -settings.swing) / 100.0);
+        flushPending();
+        // Generate ahead of the nominal onset for bipolar timing humanize.
+        // Delayed hits live in fixed storage, so 4x swing may cross later steps.
+        if (clock - nominalNext > duration)
+            nominalNext = clock;
         ++step;
+        nominalNext += duration;
+        next = nominalNext - (settings.timingHumanize > 0 ? duration * 0.2 : 0.0);
     }
     wasRunning = true;
     expectedBeat = beat + samples * beatsPerSample;

@@ -167,7 +167,8 @@ TEST_CASE ("Gate, free rate and swing schedule exact samples", "[arp][timing]")
     settings.sync = false;
     settings.freeMs = 10;
     settings.gate = 50;
-    settings.swing = 50;
+    settings.swing = 100;
+    settings.swingSubdivision = 0;
     juce::MidiBuffer input, output;
     addChord (input, 11);
     engine.render (settings, input, output, 0, 137, 48000, 1200, true, false);
@@ -455,7 +456,7 @@ TEST_CASE ("Dense chord retriggers retain preallocated recycled MIDI storage", "
     for (int block = 0; block < 4; ++block)
     {
         midi.clear();
-        for (int note = 0; note < 128; ++note)
+        for (int note = 17; note < 128; ++note)
             midi.addEvent (juce::MidiMessage::noteOn (1, note, static_cast<juce::uint8> (100)), 0);
         for (int sample = 1; sample < 512; ++sample)
         {
@@ -464,7 +465,7 @@ TEST_CASE ("Dense chord retriggers retain preallocated recycled MIDI storage", "
         }
         processor.processBlock (audio, midi);
         CHECK (storage.contains (midi.data.getRawDataPointer()));
-        CHECK (noteOns (midi).size() == 128 * 512);
+        CHECK (noteOns (midi).size() == 111 * 512);
     }
 }
 

@@ -6,13 +6,18 @@ class PluginEditor : public juce::AudioProcessorEditor
 {
 public:
     explicit PluginEditor (PluginProcessor&);
-    ~PluginEditor() override = default;
+    ~PluginEditor() override;
     void paint (juce::Graphics&) override;
     void resized() override;
     void parentHierarchyChanged() override { resized(); }
-    void chooseProject (bool save, std::function<void (juce::String)>);
+    void chooseProject (int action, std::function<void (juce::String)>);
 
 private:
+   #if JUCE_IOS
+    void iosProjectAction (int, const juce::File&, std::function<void (juce::String)>);
+   #endif
+    void confirmDiscardingChanges (std::function<void()>);
+    juce::Array<juce::File> projectFiles() const;
     PluginProcessor& processorRef;
     std::unique_ptr<juce::FileChooser> chooser;
     std::unique_ptr<chordrunner::ui::NativeEditor> nativeView;

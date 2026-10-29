@@ -5,6 +5,14 @@
 PluginProcessor::PluginProcessor()
     : AudioProcessor (BusesProperties().withOutput ("Out", juce::AudioChannelSet::stereo(), true))
 {
+   #if JUCE_IOS
+    iosLibrary = std::make_shared<chordrunner::IOSProjectLibrary>();
+   #endif
+    snapshots = std::make_unique<chordrunner::SnapshotExchange<PlaybackBank>>();
+    for (int i = 0; i < patternCount; ++i)
+        patterns[static_cast<size_t> (i)].name = "Pattern " + juce::String (i + 1);
+    createdAt = modifiedAt = juce::Time::getCurrentTime().toISO8601 (true);
+    markDocumentClean();
 }
 
 void PluginProcessor::prepareToPlay (double rate, int maximumBlockSize)
@@ -13,7 +21,7 @@ void PluginProcessor::prepareToPlay (double rate, int maximumBlockSize)
     // cycle without allocating when the first host/standalone buffer is empty.
     const double boundaries = std::ceil (juce::jmax (0, maximumBlockSize) * 1000.0
         / (60.0 * juce::jmax (1.0, rate) * 0.0625 * 0.5)) + 4.0;
-    // Fastest sync rate at 1000 BPM, 50% swing, 128-note chord trigger,
+    // Fastest sync rate at 1000 BPM, swing/humanize overlap, 128-note chord trigger,
     // overlapping gates, plus all held passthrough notes and bounded input.
     const auto bytes = static_cast<size_t> (maxInputBytes + 65536.0
         + (boundaries + juce::jmin (juce::jmax (0, maximumBlockSize), maxInputBytes / 8))
@@ -21,6 +29,9 @@ void PluginProcessor::prepareToPlay (double rate, int maximumBlockSize)
     outgoingMidi.ensureSize (bytes);
     bootstrapMidi.ensureSize (bytes);
     sequenceMidi.ensureSize (static_cast<size_t> (65536.0 + boundaries * chordrunner::maxNotes * 32.0));
+    appendMidi.ensureSize (maxInputBytes + 8);
+    inputMidi.ensureSize (maxInputBytes + 8);
+    segmentMidi.ensureSize (bytes);
     primeMidiBuffer = true;
     resetRequested.store (true, std::memory_order_release);
 }
@@ -45,79 +56,189 @@ void PluginProcessor::processBlock (juce::AudioBuffer<float>& audio, juce::MidiB
 {
     audio.clear();
     outgoingMidi.clear();
-    if (audio.getNumSamples() <= 0)
+    const int samples = audio.getNumSamples();
+    if (samples <= 0)
         return;
-    sequenceMidi.clear();
-    const auto oldRevision = snapshots.current().noteRevision;
-    snapshots.consume();
-    const auto& timeline = snapshots.current();
-    const bool changed = oldRevision != timeline.noteRevision;
-    const bool routeChanged = timeline.sequencerEnabled != previousSequencer || timeline.arp.enabled != previousArp || bypassed;
-    bypassed = false;
-    const bool sync = timeline.hostSync && ! isStandalone();
-    const bool reset = resetRequested.exchange (false, std::memory_order_acq_rel) || sync != previousHostSync;
-    if (routeChanged || reset)
-    {
-        engine.stop (previousArp ? sequenceMidi : outgoingMidi);
-        arpeggiator.stop (outgoingMidi);
-        releasePassedNotes (outgoingMidi);
-        sequenceMidi.clear();
-    }
-    previousSequencer = timeline.sequencerEnabled;
-    previousArp = timeline.arp.enabled;
+    snapshots->consume();
+    const auto& bank = snapshots->current();
+    const auto& master = bank.patterns[static_cast<size_t> (juce::jmax (0, activePattern))];
+    const bool sync = master.hostSync && ! isStandalone();
+    bool reset = resetRequested.exchange (false, std::memory_order_acq_rel) || sync != previousHostSync || bypassed;
+    const bool hadQueuedPattern = queuedPattern != -2;
     if (reset)
-        internalBeat = 0.0;
+    {
+        internalBeat = patternOrigin = 0.0;
+        queuedPattern = -2;
+    }
+    bypassed = false;
     previousHostSync = sync;
-
-    double beat = internalBeat, bpm = timeline.tempo;
-    bool playing = ! timeline.sequencerEnabled || playRequested.load (std::memory_order_acquire);
-    bool available = false;
+    double beat = internalBeat, bpm = master.tempo;
+    bool playing = ! master.sequencerEnabled || playRequested.load (std::memory_order_acquire);
+    bool available = false, hostPlaying = false;
     if (sync)
     {
         playing = false;
         if (auto* playHead = getPlayHead())
-        {
             if (const auto position = playHead->getPosition())
             {
                 const auto hostBeat = position->getPpqPosition();
                 const auto hostTempo = position->getBpm();
-                if (hostBeat && hostTempo && std::isfinite (*hostBeat)
+                if (hostBeat && hostTempo && std::isfinite (*hostBeat) && std::abs (*hostBeat) <= 1.0e12
                     && std::isfinite (*hostTempo) && *hostTempo > 0.0 && *hostTempo <= 1000.0)
                 {
                     available = true;
                     beat = *hostBeat;
                     bpm = *hostTempo;
-                    playing = position->getIsPlaying() && (! timeline.sequencerEnabled || playRequested.load (std::memory_order_acquire));
+                    hostPlaying = position->getIsPlaying();
+                    playing = hostPlaying && (! master.sequencerEnabled || playRequested.load (std::memory_order_acquire));
                 }
             }
+    }
+    const auto beatsPerSample = bpm / (60.0 * juce::jmax (1.0, getSampleRate()));
+    auto queue = [&] (int slot, double at)
+    {
+        queuedPattern = slot;
+        const int mode = launchMode.load (std::memory_order_relaxed);
+        const double quantum = mode == 1 ? 0.25 : mode == 2 ? 1.0 : mode == 3 ? 4.0 : master.length();
+        const double origin = mode == 4 ? patternOrigin : 0.0;
+        launchBeat = ! playing || mode == 0 ? at : origin + std::ceil ((at - origin - 1.0e-9) / quantum) * quantum;
+        queuedStatus.store (slot, std::memory_order_release);
+    };
+    if (transportWasRunning && std::abs (beat - expectedHostBeat) > 1.0e-7)
+    {
+        patternOrigin = 0.0;
+        if (queuedPattern != -2)
+            queue (queuedPattern, beat);
+    }
+    int request = selectionRequest.exchange (-2, std::memory_order_acq_rel);
+    if (reset && (hadQueuedPattern || selectedStatus.load() != activePattern))
+        request = selectedStatus.load();
+    if (request != -2)
+        queue (request, beat);
+    bool force = reset;
+    auto launch = [&] (double at)
+    {
+        activePattern = queuedPattern;
+        queuedPattern = -2;
+        patternOrigin = at;
+        force = true;
+        activeStatus.store (activePattern, std::memory_order_release);
+        queuedStatus.store (-2, std::memory_order_release);
+    };
+    auto render = [&] (int start, int count)
+    {
+        if (count <= 0)
+            return;
+        segmentMidi.clear();
+        sequenceMidi.clear();
+        inputMidi.clear();
+        const double localBeat = beat + start * beatsPerSample - patternOrigin;
+        if (activePattern < 0)
+        {
+            engine.stop (previousArp ? sequenceMidi : segmentMidi);
+            arpeggiator.stop (segmentMidi);
+            releasePassedNotes (segmentMidi);
         }
-    }
-    if (timeline.sequencerEnabled)
-    {
-        engine.render (timeline, beat, bpm, getSampleRate(), audio.getNumSamples(), playing,
-                       changed || reset || routeChanged, timeline.arp.enabled ? sequenceMidi : outgoingMidi);
-        if (timeline.arp.enabled)
-            arpeggiator.render (timeline.arp, sequenceMidi, outgoingMidi, beat, bpm, getSampleRate(),
-                                audio.getNumSamples(), playing, changed);
-    }
-    else if (timeline.arp.enabled)
-    {
-        if (midi.data.size() <= maxInputBytes)
-            arpeggiator.render (timeline.arp, midi, outgoingMidi, beat, bpm, getSampleRate(),
-                                audio.getNumSamples(), playing, changed);
         else
-            arpeggiator.stop (outgoingMidi);
-    }
-    else
-        passMidi (midi, outgoingMidi);
+        {
+            const auto& timeline = bank.patterns[static_cast<size_t> (activePattern)];
+            const bool segmentPlaying = (! timeline.sequencerEnabled || playRequested.load (std::memory_order_acquire))
+                && (! sync || hostPlaying);
+            const bool changed = renderedRevision != timeline.noteRevision;
+            const bool route = timeline.sequencerEnabled != previousSequencer || timeline.arp.enabled != previousArp;
+            if (route || force)
+            {
+                engine.stop (previousArp ? sequenceMidi : segmentMidi);
+                arpeggiator.stop (segmentMidi);
+                releasePassedNotes (segmentMidi);
+                sequenceMidi.clear();
+            }
+            previousSequencer = timeline.sequencerEnabled;
+            previousArp = timeline.arp.enabled;
+            renderedRevision = timeline.noteRevision;
+            if (midi.data.size() <= maxInputBytes)
+                for (const auto event : midi)
+                {
+                    if (event.samplePosition < start || event.samplePosition >= start + count)
+                        continue;
+                    const bool selection = event.numBytes == 3 && (event.data[0] & 0xe0) == 0x80 && event.data[1] <= 16;
+                    if (! selection)
+                        inputMidi.addEvent (event.data, event.numBytes, event.samplePosition - start);
+                }
+            if (timeline.sequencerEnabled)
+            {
+                engine.render (timeline, localBeat, bpm, getSampleRate(), count, segmentPlaying, changed || force || route,
+                               timeline.arp.enabled ? sequenceMidi : segmentMidi);
+                if (timeline.arp.enabled)
+                    arpeggiator.render (timeline.arp, sequenceMidi, segmentMidi, localBeat, bpm, getSampleRate(), count, segmentPlaying, changed || force);
+            }
+            else if (timeline.arp.enabled)
+            {
+                if (midi.data.size() <= maxInputBytes)
+                    arpeggiator.render (timeline.arp, inputMidi, segmentMidi, localBeat, bpm, getSampleRate(), count, segmentPlaying, changed || force);
+                else
+                    arpeggiator.stop (segmentMidi);
+            }
+            else if (midi.data.size() <= maxInputBytes)
+                passMidi (inputMidi, segmentMidi);
+            else
+                releasePassedNotes (segmentMidi);
+        }
+        // Concatenate already ordered segments in linear time. A one-event
+        // scratch buffer lets JUCE encode timestamps without an ever-growing
+        // addEvent search or relying on the private MIDI storage format.
+        if (start == 0)
+            outgoingMidi.data.addArray (segmentMidi.data);
+        else
+            for (const auto event : segmentMidi)
+            {
+                appendMidi.clear();
+                appendMidi.addEvent (event.data, event.numBytes, event.samplePosition + start);
+                outgoingMidi.data.addArray (appendMidi.data);
+            }
+        force = false;
+    };
+    int cursor = 0;
+    auto renderThrough = [&] (int end)
+    {
+        if (queuedPattern != -2)
+        {
+            const int boundary = juce::jlimit (cursor, samples,
+                static_cast<int> (juce::jlimit (0.0, static_cast<double> (samples), std::ceil ((launchBeat - beat) / beatsPerSample - 1.0e-7))));
+            if (boundary < end || (boundary == end && end < samples))
+            {
+                render (cursor, boundary - cursor);
+                cursor = boundary;
+                launch (beat + boundary * beatsPerSample);
+            }
+        }
+        render (cursor, end - cursor);
+        cursor = end;
+    };
+    if (midi.data.size() <= maxInputBytes)
+        for (const auto event : midi)
+        {
+            if (event.numBytes != 3 || (event.data[0] & 0xf0) != 0x90 || event.data[2] == 0 || event.data[1] > 16)
+                continue;
+            const int at = juce::jlimit (cursor, samples - 1, event.samplePosition);
+            renderThrough (at);
+            const int slot = event.data[1] == 16 ? -1 : event.data[1];
+            selectedStatus.store (slot, std::memory_order_release);
+            revision.fetch_add (1, std::memory_order_relaxed);
+            queue (slot, beat + at * beatsPerSample);
+        }
+    renderThrough (samples);
+    if (! sync && playing)
+        internalBeat += samples * beatsPerSample;
+    transportWasRunning = playing;
+    expectedHostBeat = beat + samples * beatsPerSample;
     finishMidiBlock (midi);
-    if (! sync && playing && getSampleRate() > 0.0)
-        internalBeat += audio.getNumSamples() * bpm / (60.0 * getSampleRate());
     playingStatus.store (playing, std::memory_order_relaxed);
     hostAvailable.store (available, std::memory_order_relaxed);
-    beatStatus.store (playing ? std::fmod (juce::jmax (0.0, beat), timeline.length()) : 0.0, std::memory_order_relaxed);
+    const auto length = bank.patterns[static_cast<size_t> (juce::jmax (0, activePattern))].length();
+    beatStatus.store (playing ? std::fmod (juce::jmax (0.0, beat + samples * beatsPerSample - patternOrigin), length) : 0.0, std::memory_order_relaxed);
     tempoStatus.store (bpm, std::memory_order_relaxed);
-    chordStatus.store (engine.activeChord(), std::memory_order_relaxed);
+    chordStatus.store (activePattern < 0 ? -1 : engine.activeChord(), std::memory_order_relaxed);
 }
 
 void PluginProcessor::processBlockBypassed (juce::AudioBuffer<float>& audio, juce::MidiBuffer& midi)
@@ -194,157 +315,12 @@ void PluginProcessor::setPlaying (bool playing)
 
 void PluginProcessor::panic() { setPlaying (false); }
 
-juce::var PluginProcessor::getTimelineState() const
-{
-    const juce::ScopedLock lock (stateLock);
-    auto object = std::make_unique<juce::DynamicObject>();
-    object->setProperty ("schema", 3);
-    object->setProperty ("app", "Chord Runner");
-    object->setProperty ("progression", progression);
-    object->setProperty ("tempo", state.tempo);
-    object->setProperty ("channel", state.channel);
-    object->setProperty ("velocity", state.velocity);
-    object->setProperty ("octave", state.octave);
-    object->setProperty ("hostSync", state.hostSync);
-    object->setProperty ("sequencerEnabled", state.sequencerEnabled);
-    auto arp = std::make_unique<juce::DynamicObject>();
-    arp->setProperty ("enabled", state.arp.enabled);
-    arp->setProperty ("sync", state.arp.sync);
-    arp->setProperty ("hold", state.arp.hold);
-    arp->setProperty ("velocityEnabled", state.arp.velocityEnabled);
-    arp->setProperty ("velocityRetrigger", state.arp.velocityRetrigger);
-    arp->setProperty ("style", state.arp.style);
-    arp->setProperty ("steps", state.arp.steps);
-    arp->setProperty ("distance", state.arp.distance);
-    arp->setProperty ("offset", state.arp.offset);
-    arp->setProperty ("retrigger", state.arp.retrigger);
-    arp->setProperty ("repeats", state.arp.repeats);
-    arp->setProperty ("target", state.arp.target);
-    arp->setProperty ("rate", state.arp.rate);
-    arp->setProperty ("freeMs", state.arp.freeMs);
-    arp->setProperty ("gate", state.arp.gate);
-    arp->setProperty ("swing", state.arp.swing);
-    arp->setProperty ("interval", state.arp.interval);
-    arp->setProperty ("decay", state.arp.decay);
-    object->setProperty ("arp", juce::var (arp.release()));
-    object->setProperty ("revision", revision.load());
-    object->setProperty ("totalBeats", state.length());
-    juce::Array<juce::var> chords;
-    double start = 0.0;
-    for (int i = 0; i < state.count; ++i)
-    {
-        const auto& chord = state.chords[static_cast<size_t> (i)];
-        auto item = std::make_unique<juce::DynamicObject>();
-        item->setProperty ("label", juce::String::fromUTF8 (chord.label.data()));
-        item->setProperty ("beats", chord.beats);
-        item->setProperty ("startBeat", start);
-        start += chord.beats;
-        juce::Array<juce::var> notes;
-        for (int n = 0; n < chord.noteCount; ++n)
-            notes.add (chord.notes[static_cast<size_t> (n)]);
-        item->setProperty ("notes", notes);
-        chords.add (juce::var (item.release()));
-    }
-    object->setProperty ("chords", chords);
-    return juce::var (object.release());
-}
-
-namespace
-{
-bool numberInRange (const juce::var& value, double low, double high, bool integral = true)
-{
-    if (! value.isInt() && ! value.isInt64() && ! value.isDouble())
-        return false;
-    const double number = static_cast<double> (value);
-    return std::isfinite (number) && number >= low && number <= high
-        && (! integral || std::abs (std::floor (number) - number) < std::numeric_limits<double>::epsilon());
-}
-}
-
-juce::Result PluginProcessor::setTimelineState (const juce::var& value)
-{
-    if (! value.isObject() || value["app"].toString() != "Chord Runner"
-        || ! numberInRange (value["schema"], 1, 3)
-        || ! numberInRange (value["tempo"], 20, 300, false)
-        || ! numberInRange (value["channel"], 1, 16)
-        || ! numberInRange (value["velocity"], 1, 127)
-        || ! numberInRange (value["octave"], 0, 8)
-        || ! value["hostSync"].isBool() || ! value["progression"].isString())
-        return juce::Result::fail ("Invalid Chord Runner settings or unsupported project version.");
-    chordrunner::Timeline next;
-    next.tempo = static_cast<double> (value["tempo"]);
-    next.channel = static_cast<int> (value["channel"]);
-    next.velocity = static_cast<int> (value["velocity"]);
-    next.octave = static_cast<int> (value["octave"]);
-    next.hostSync = static_cast<bool> (value["hostSync"]);
-    if (static_cast<int> (value["schema"]) >= 2)
-    {
-        const auto arp = value["arp"];
-        if (! value["sequencerEnabled"].isBool() || ! arp.isObject()
-            || ! arp["enabled"].isBool()
-            || ! arp["sync"].isBool()
-            || ! arp["hold"].isBool()
-            || ! arp["velocityEnabled"].isBool()
-            || ! arp["velocityRetrigger"].isBool()
-            || ! numberInRange (arp["style"], 0, 10)
-            || ! numberInRange (arp["steps"], 0, 8)
-            || ! numberInRange (arp["distance"], -36, 36)
-            || ! numberInRange (arp["offset"], 0, 128)
-            || ! numberInRange (arp["retrigger"], 0, 2)
-            || ! numberInRange (arp["repeats"], 0, 64)
-            || ! numberInRange (arp["target"], 0, 127)
-            || ! numberInRange (arp["rate"], 0.0625, 16, false)
-            || ! numberInRange (arp["freeMs"], 10, 2000, false)
-            || ! numberInRange (arp["gate"], 1, 200, false)
-            || ! numberInRange (arp["swing"], 0, 50, false)
-            || ! numberInRange (arp["interval"], 0.0625, 64, false)
-            || ! numberInRange (arp["decay"], 1, 60000, false)
-            )
-            return juce::Result::fail ("Invalid sequencer or arpeggiator settings.");
-        next.sequencerEnabled = static_cast<bool> (value["sequencerEnabled"]);
-        next.arp.enabled = static_cast<bool> (arp["enabled"]);
-        next.arp.sync = static_cast<bool> (arp["sync"]);
-        next.arp.hold = static_cast<bool> (arp["hold"]);
-        next.arp.velocityEnabled = static_cast<bool> (arp["velocityEnabled"]);
-        next.arp.velocityRetrigger = static_cast<bool> (arp["velocityRetrigger"]);
-        next.arp.style = static_cast<int> (arp["style"]);
-        next.arp.steps = static_cast<int> (arp["steps"]);
-        next.arp.distance = static_cast<int> (arp["distance"]);
-        next.arp.offset = static_cast<int> (arp["offset"]);
-        next.arp.retrigger = static_cast<int> (arp["retrigger"]);
-        next.arp.repeats = static_cast<int> (arp["repeats"]);
-        next.arp.target = static_cast<int> (arp["target"]);
-        next.arp.rate = static_cast<double> (arp["rate"]);
-        next.arp.freeMs = static_cast<double> (arp["freeMs"]);
-        next.arp.gate = static_cast<double> (arp["gate"]);
-        next.arp.swing = static_cast<double> (arp["swing"]);
-        next.arp.interval = static_cast<double> (arp["interval"]);
-        next.arp.decay = static_cast<double> (arp["decay"]);
-    }
-    auto text = value["progression"].toString();
-    const auto result = static_cast<int> (value["schema"]) < 3
-        ? chordrunner::migrateLegacyProgression (text, next, text)
-        : chordrunner::parseProgression (text, next);
-    if (result.failed())
-        return result;
-    {
-        const juce::ScopedLock lock (stateLock);
-        const bool notesChanged = text != progression || next.octave != state.octave
-            || next.channel != state.channel || next.velocity != state.velocity
-            || next.sequencerEnabled != state.sequencerEnabled || next.arp != state.arp;
-        next.noteRevision = state.noteRevision + (notesChanged ? 1u : 0u);
-        state = next;
-        progression = text;
-        snapshots.publish (next);
-        revision.fetch_add (1);
-    }
-    updateHostDisplay (ChangeDetails().withNonParameterStateChanged (true));
-    return juce::Result::ok();
-}
-
 juce::var PluginProcessor::getTransportState() const
 {
     auto object = std::make_unique<juce::DynamicObject>();
+    object->setProperty ("selectedPattern", selectedStatus.load());
+    object->setProperty ("activePattern", activeStatus.load());
+    object->setProperty ("queuedPattern", queuedStatus.load());
     object->setProperty ("playing", playingStatus.load());
     object->setProperty ("armed", playRequested.load());
     object->setProperty ("beat", beatStatus.load());
@@ -358,15 +334,15 @@ juce::var PluginProcessor::getTransportState() const
 
 void PluginProcessor::getStateInformation (juce::MemoryBlock& data)
 {
-    const auto json = juce::JSON::toString (getTimelineState(), true);
+    const auto json = juce::JSON::toString (getProjectState(), true);
     data.replaceAll (json.toRawUTF8(), json.getNumBytesAsUTF8());
 }
 
 void PluginProcessor::setStateInformation (const void* data, int size)
 {
-    if (data == nullptr || size <= 0 || size > 65536)
+    if (data == nullptr || size <= 0 || size > 1048576)
         return;
-    if (setTimelineState (juce::JSON::parse (juce::String::fromUTF8 (static_cast<const char*> (data), size))).wasOk())
+    if (setProjectState (juce::JSON::parse (juce::String::fromUTF8 (static_cast<const char*> (data), size))).wasOk())
         setPlaying (false); // Restoring a session never starts unsolicited MIDI.
 }
 

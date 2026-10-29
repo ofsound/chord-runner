@@ -27,6 +27,20 @@ add_subdirectory(JUCE)
 set(CHORD_RUNNER_MOBILE_OPTIONS)
 if(CMAKE_SYSTEM_NAME STREQUAL "iOS")
     set(FORMATS Standalone AUv3)
+    option(CHORD_RUNNER_IOS_ICLOUD_ENABLED "Enable the shared iCloud project library (requires a paid Apple Developer team)" OFF)
+    set(CHORD_RUNNER_ICLOUD_PLIST_ENTRIES "")
+    if(CHORD_RUNNER_IOS_ICLOUD_ENABLED)
+        set(CHORD_RUNNER_ICLOUD_PLIST_ENTRIES [=[
+            <key>NSUbiquitousContainers</key><dict><key>iCloud.com.ofsound.chordrunner</key><dict>
+            <key>NSUbiquitousContainerIsDocumentScopePublic</key><true/>
+            <key>NSUbiquitousContainerName</key><string>Chord Runner</string>
+            <key>NSUbiquitousContainerSupportedFolderLevels</key><string>Any</string>
+            </dict></dict>]=])
+    endif()
+    configure_file(packaging/ios-projects.plist.in "${CMAKE_CURRENT_BINARY_DIR}/ios-projects.plist" @ONLY)
+    file(READ "${CMAKE_CURRENT_BINARY_DIR}/ios-projects.plist" CHORD_RUNNER_PROJECT_PLIST)
+    list(APPEND CHORD_RUNNER_MOBILE_OPTIONS PLIST_TO_MERGE "${CHORD_RUNNER_PROJECT_PLIST}"
+        ICLOUD_PERMISSIONS_ENABLED ${CHORD_RUNNER_IOS_ICLOUD_ENABLED})
     list(APPEND CHORD_RUNNER_MOBILE_OPTIONS
         BACKGROUND_AUDIO_ENABLED TRUE
         TARGETED_DEVICE_FAMILY "1,2"
@@ -69,6 +83,19 @@ add_library(SharedCode INTERFACE)
 target_compile_features(SharedCode INTERFACE cxx_std_23)
 file(GLOB_RECURSE SourceFiles CONFIGURE_DEPENDS "source/*.cpp" "source/*.h")
 target_sources(SharedCode INTERFACE ${SourceFiles})
+if(CMAKE_SYSTEM_NAME STREQUAL "iOS")
+    enable_language(OBJCXX)
+    set(IOS_LIBRARY_SOURCE "${CMAKE_CURRENT_SOURCE_DIR}/source/platform/IOSProjectLibrary.mm")
+    set_source_files_properties("${IOS_LIBRARY_SOURCE}" PROPERTIES COMPILE_FLAGS "-fobjc-arc" COMPILE_OPTIONS -Werror)
+    target_sources(SharedCode INTERFACE "${IOS_LIBRARY_SOURCE}")
+    target_compile_definitions(SharedCode INTERFACE CHORD_RUNNER_IOS_ICLOUD_ENABLED=$<BOOL:${CHORD_RUNNER_IOS_ICLOUD_ENABLED}>)
+    if(CHORD_RUNNER_IOS_ICLOUD_ENABLED)
+        foreach(format Standalone AUv3)
+            set_target_properties(${PROJECT_NAME}_${format} PROPERTIES
+                XCODE_ATTRIBUTE_CODE_SIGN_ENTITLEMENTS "${CMAKE_CURRENT_SOURCE_DIR}/packaging/ios-projects.entitlements")
+        endforeach()
+    endif()
+endif()
 juce_add_binary_data(Assets SOURCES "assets/chords.json")
 target_compile_definitions(SharedCode INTERFACE
     JUCE_WEB_BROWSER=0 JUCE_USE_CURL=0 JUCE_VST3_CAN_REPLACE_VST2=0

@@ -48,7 +48,7 @@ TEST_CASE ("Native controls retain every numeric engine mapping", "[native-ui]")
     const std::array<Setting, 12> settings {{
         Setting { "tempo", "tempo", 137, false }, { "velocity", "velocity", 93, false },
         { "arp.freeMs", "freeMs", 237.5, true }, { "arp.gate", "gate", 63.5, true },
-        { "arp.swing", "swing", 17.5, true }, { "arp.steps", "steps", 4, true },
+        { "arp.swing", "swing", 17, true }, { "arp.steps", "steps", 4, true },
         { "arp.distance", "distance", -7, true }, { "arp.offset", "offset", 13, true },
         { "arp.repeats", "repeats", 8, true }, { "arp.interval", "interval", 0.0625, true },
         { "arp.target", "target", 0, true }, { "arp.decay", "decay", 4567, true }
@@ -227,4 +227,55 @@ TEST_CASE ("Native editor fits supported sizes and uses the engine timeline", "[
     CHECK (editor.controller.state["chords"][1]["notes"][0] == processor.getTimelineState()["chords"][1]["notes"][0]);
     CHECK_FALSE (editor.keyPressed (juce::KeyPress (juce::KeyPress::spaceKey), &control<juce::TextEditor> (editor, "progression")));
     CHECK_FALSE (static_cast<bool> (processor.getTransportState()["armed"]));
+}
+
+TEST_CASE ("Phone pages fit portrait and landscape without scrolling or losing controls", "[native-ui][phone]")
+{
+    PluginProcessor processor;
+    NativeEditor editor (processor);
+    toggle (editor, "arp.enabled", true);
+    for (const auto size : { juce::Point<int> (320, 568), juce::Point<int> (390, 844), juce::Point<int> (568, 320), juce::Point<int> (844, 390) })
+    {
+        editor.setSize (size.x, size.y);
+        CHECK_FALSE (control<juce::Viewport> (editor, "body.viewport").isVisible());
+        for (int page = 0; page < 4; ++page)
+        {
+            control<juce::TextButton> (editor, "phone.page." + juce::String (page)).onClick();
+            CHECK (editor.getLocalBounds().contains (control<juce::TextButton> (editor, "play").getBounds()));
+            CHECK (editor.getLocalBounds().contains (control<juce::TextButton> (editor, "panic").getBounds()));
+            const juce::StringArray ids = page == 0 ? juce::StringArray { "pattern.1", "pattern.16", "launch", "tempo", "clock" }
+                : page == 1 ? juce::StringArray { "progression", "apply", "octave", "channel", "velocity" }
+                : page == 2 ? juce::StringArray { "arp.style", "arp.rate", "arp.gate", "arp.steps", "arp.offset", "arp.interval" }
+                : juce::StringArray { "arp.swing", "arp.swingSubdivision", "arp.velocityHumanize", "arp.timingHumanize", "arp.target", "arp.decay" };
+            for (const auto& id : ids)
+            {
+                const auto* component = findControl (editor, id);
+                REQUIRE (component != nullptr);
+                const auto bounds = editor.getLocalArea (component, component->getLocalBounds());
+                INFO (size.x << " x " << size.y << ", page " << page << ", " << id);
+                CHECK (editor.getLocalBounds().withTrimmedBottom (46).contains (bounds));
+                CHECK (bounds.getHeight() >= 22);
+                CHECK (bounds.getWidth() >= 40);
+            }
+        }
+    }
+    editor.setSize (1120, 800);
+    CHECK (control<juce::Viewport> (editor, "body.viewport").isVisible());
+    CHECK_FALSE (control<juce::TextButton> (editor, "phone.page.0").isVisible());
+    CHECK (control<juce::TextButton> (editor, "sequencerEnabled").getParentComponent()->getComponentID() == "sequence.module");
+    CHECK (control<juce::TextButton> (editor, "arp.enabled").getParentComponent()->getComponentID() == "arp.module");
+}
+
+TEST_CASE ("iPad fits both modules within the safe viewport", "[native-ui][tablet]")
+{
+    PluginProcessor processor;
+    NativeEditor editor (processor);
+    for (const auto size : { juce::Point<int> (1024, 724), juce::Point<int> (1024, 768), juce::Point<int> (768, 980) })
+    {
+        editor.setSize (size.x, size.y);
+        const auto& viewport = control<juce::Viewport> (editor, "body.viewport");
+        REQUIRE (viewport.getViewedComponent() != nullptr);
+        CHECK (viewport.getViewedComponent()->getHeight() <= viewport.getHeight());
+        CHECK (viewport.getViewPositionY() == 0);
+    }
 }

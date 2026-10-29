@@ -7,6 +7,11 @@
 #include <juce_gui_extra/juce_gui_extra.h>
 #include <juce_audio_plugin_client/Standalone/juce_StandaloneFilterWindow.h>
 
+#undef Component
+#if JUCE_MAC
+ #undef Point
+#endif
+
 #include "../source/PluginProcessor.h"
 
 namespace juce
@@ -33,15 +38,26 @@ public:
                                   channels,
                                   shouldAutoOpenMidiDevices)
     {
+        if (settingsToUse != nullptr)
+            if (auto* plugin = dynamic_cast<PluginProcessor*> (processor.get()))
+                plugin->restoreStandaloneSettings (*settingsToUse);
         createVirtualMidiOutput();
         useVirtualMidiOutputIfAvailable();
         deviceManager.addChangeListener (this);
+    }
+
+    void saveDocumentAccess()
+    {
+        if (settings != nullptr)
+            if (auto* plugin = dynamic_cast<PluginProcessor*> (processor.get()))
+                plugin->saveStandaloneSettings (*settings);
     }
 
     void flushMidiBeforeShutdown()
     {
         // Detach the audio processor under AudioProcessorPlayer's callback lock
         // before touching the MIDI endpoint. Never call processBlock from the UI.
+        saveDocumentAccess();
         stopPlaying();
         if (auto* plugin = dynamic_cast<PluginProcessor*> (processor.get()))
             plugin->panic();
@@ -212,7 +228,10 @@ public:
         // The OS may terminate a backgrounded app without calling shutdown().
         auto* holder = mainWindow != nullptr ? mainWindow->pluginHolder.get() : pluginHolder.get();
         if (holder != nullptr)
+        {
+            if (auto* runner = dynamic_cast<ChordRunnerStandalonePluginHolder*> (holder)) runner->saveDocumentAccess();
             holder->savePluginState();
+        }
         appProperties.saveIfNeeded();
     }
    #endif

@@ -1,0 +1,16 @@
+<plist version="1.0"><dict>
+@CHORD_RUNNER_ICLOUD_PLIST_ENTRIES@
+    <key>NSLocalNetworkUsageDescription</key>
+    <string>Send MIDI notes to music apps and devices on your local network.</string>
+    <key>NSBonjourServices</key><array><string>_apple-midi._udp</string></array>
+    <key>UIFileSharingEnabled</key><true/>
+    <key>LSSupportsOpeningDocumentsInPlace</key><true/>
+    <key>UTExportedTypeDeclarations</key><array><dict>
+        <key>UTTypeIdentifier</key><string>com.ofsound.chordrunner.project</string>
+        <key>UTTypeDescription</key><string>Chord Runner Project</string>
+        <key>UTTypeConformsTo</key><array><string>public.data</string></array>
+        <key>UTTypeTagSpecification</key><dict>
+            <key>public.filename-extension</key><array><string>chordrunner</string></array>
+        </dict>
+    </dict></array>
+</dict></plist>

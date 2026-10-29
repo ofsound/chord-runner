@@ -115,7 +115,7 @@ TEST_CASE ("Legacy session migration preserves numeric durations and saved arpeg
         legacy["arp"].getDynamicObject()->setProperty ("enabled", true);
         REQUIRE (processor.setTimelineState (legacy).wasOk());
         const auto migrated = processor.getTimelineState();
-        CHECK (static_cast<int> (migrated["schema"]) == 3);
+        CHECK (static_cast<int> (migrated["schema"]) == 4);
         CHECK (migrated["progression"].toString() == "C@6 - Dm@9 - G@13 - C7@2 - Cmaj7@2 - C@6/9");
         CHECK (static_cast<bool> (migrated["arp"]["enabled"]) == (schema == 2));
         const auto& chords = *migrated["chords"].getArray();
