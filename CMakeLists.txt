@@ -24,6 +24,7 @@ if(NOT CMAKE_SYSTEM_NAME STREQUAL "iOS")
     include(Tests)
 endif()
 add_subdirectory(JUCE)
+add_subdirectory(modules/melatonin_blur EXCLUDE_FROM_ALL)
 set(CHORD_RUNNER_MOBILE_OPTIONS)
 if(CMAKE_SYSTEM_NAME STREQUAL "iOS")
     set(FORMATS Standalone AUv3)
@@ -102,6 +103,7 @@ target_compile_definitions(SharedCode INTERFACE
     CMAKE_BUILD_TYPE="$<CONFIG>" VERSION="${CURRENT_VERSION}"
     PRODUCT_NAME_WITHOUT_VERSION="${PRODUCT_NAME}")
 target_link_libraries(SharedCode INTERFACE
+    melatonin_blur
     Assets juce_audio_utils juce_audio_processors juce_gui_extra
     juce::juce_recommended_config_flags juce::juce_recommended_warning_flags)
 target_link_libraries(${PROJECT_NAME} PRIVATE SharedCode)

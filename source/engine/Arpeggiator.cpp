@@ -30,6 +30,7 @@ void Arpeggiator::stop (juce::MidiBuffer& output, int sample, bool clearKeys)
     voiceCount = pendingCount = 0;
     if (clearKeys)
     {
+        rhythmStep = 0;
         keyCount = orderCount = 0;
         sustain.fill (false);
     }
@@ -67,12 +68,45 @@ void Arpeggiator::schedule (const Key& key, int transpose, const ArpeggiatorSett
 {
     if (pendingCount >= static_cast<int> (pending.size()))
         return;
+    const auto gateAt = [&] (juce::uint64 position)
+    {
+        return ! settings.gateSequenceEnabled || (settings.gateMask & (1 << (position % static_cast<juce::uint64> (settings.gateLength)))) != 0;
+    };
+    const auto tieAt = [&] (juce::uint64 position)
+    {
+        return settings.tieSequenceEnabled && (settings.tieMask & (1 << (position % static_cast<juce::uint64> (settings.tieLength)))) != 0;
+    };
+    if (! gateAt (rhythmStep) || (rhythmStep > 0 && rhythmContinuation && tieAt (rhythmStep) && gateAt (rhythmStep - 1)))
+        return;
+    const int baseLength = settings.style == ArpeggiatorSettings::chordTrigger ? 1
+        : settings.style == ArpeggiatorSettings::upDown || settings.style == ArpeggiatorSettings::downUp
+            ? juce::jmax (1, 2 * keyCount - 2) : keyCount;
+    const auto totalSteps = static_cast<juce::uint64> (baseLength * (settings.steps + 1) * settings.repeats);
+    int extensions = 0;
+    while (extensions < 256 && (settings.repeats == 0 || step + static_cast<juce::uint64> (extensions + 1) < totalSteps) && gateAt (rhythmStep + static_cast<juce::uint64> (extensions + 1))
+        && tieAt (rhythmStep + static_cast<juce::uint64> (extensions + 1)))
+        ++extensions;
+    const bool endlessTie = extensions == 256 && settings.repeats == 0;
+    if (extensions == 256 && settings.repeats > 0)
+        extensions = static_cast<int> (totalSteps - step - 1);
     const auto subdivision = static_cast<juce::uint64> (1u << juce::jlimit (0, 2, settings.swingSubdivision));
     const double swingDelay = (step / subdivision) % 2 != 0
         ? static_cast<double> (subdivision) * 0.5 * settings.swing / 100.0 : 0.0;
     const double jitter = settings.timingHumanize > 0
         ? (grooveRandom() * 2.0 - 1.0) * 0.2 * settings.timingHumanize / 100.0 : 0.0;
-    pending[static_cast<size_t> (pendingCount++)] = { key, transpose, nominalNext + duration * (swingDelay + jitter), duration };
+    const auto endStep = step + static_cast<juce::uint64> (extensions);
+    const double endSwing = (endStep / subdivision) % 2 != 0
+        ? static_cast<double> (subdivision) * 0.5 * settings.swing / 100.0 : 0.0;
+    const double lastGate = gateAt (rhythmStep + static_cast<juce::uint64> (extensions + 1)) ? settings.gate / 100.0 : juce::jmin (1.0, settings.gate / 100.0);
+    double heldDuration = endlessTie ? 1.0e15
+        : duration * juce::jmax (0.001, extensions + lastGate + endSwing - swingDelay);
+    if (! gateAt (rhythmStep + static_cast<juce::uint64> (extensions + 1)))
+    {
+        const double nextSwing = ((endStep + 1) / subdivision) % 2 != 0
+            ? static_cast<double> (subdivision) * 0.5 * settings.swing / 100.0 : 0.0;
+        heldDuration = juce::jmin (heldDuration, duration * juce::jmax (0.001, extensions + 1.0 + nextSwing - swingDelay));
+    }
+    pending[static_cast<size_t> (pendingCount++)] = { key, transpose, nominalNext + duration * (swingDelay + jitter), heldDuration * 100.0 / settings.gate, nominalNext };
 }
 
 void Arpeggiator::emit (const Key& key, int transpose, const ArpeggiatorSettings& settings, double duration,
@@ -84,7 +118,7 @@ void Arpeggiator::emit (const Key& key, int transpose, const ArpeggiatorSettings
     for (int i = voiceCount - 1; i >= 0; --i)
     {
         const auto& voice = voices[static_cast<size_t> (i)];
-        if (voice.note == note && voice.channel == key.channel)
+        if (settings.style != ArpeggiatorSettings::chordTrigger || (voice.note == note && voice.channel == key.channel))
         {
             output.addEvent (juce::MidiMessage::noteOff (voice.channel, voice.note), sample);
             voices[static_cast<size_t> (i)] = voices[static_cast<size_t> (--voiceCount)];
@@ -283,6 +317,14 @@ void Arpeggiator::render (const ArpeggiatorSettings& settings, const juce::MidiB
         }
         auto flushPending = [&]
         {
+            // A swung step may coincide with a later step. Single-note styles
+            // choose the newest nominal step, never emit a zero-length extra attack.
+            int newest = -1;
+            if (settings.style != ArpeggiatorSettings::chordTrigger)
+                for (int i = 0; i < pendingCount; ++i)
+                    if (clock + 1.0e-7 >= pending[static_cast<size_t> (i)].at
+                        && (newest < 0 || pending[static_cast<size_t> (i)].nominal >= pending[static_cast<size_t> (newest)].nominal))
+                        newest = i;
             int remaining = 0;
             for (int i = 0; i < pendingCount; ++i)
             {
@@ -296,14 +338,28 @@ void Arpeggiator::render (const ArpeggiatorSettings& settings, const juce::MidiB
                 {
                     return key.note == hit.key.note && key.channel == hit.key.channel;
                 });
-                if (present)
+                if (present && (settings.style == ArpeggiatorSettings::chordTrigger || i == newest))
                     emit (hit.key, hit.transpose, settings, hit.duration, sampleRate, sampleMidi, sample);
             }
             pendingCount = remaining;
         };
-        flushPending();
         if (keyCount == 0 || currentBeat < -1.0e-9 || clock + 1.0e-7 < next)
+        {
+            flushPending();
             continue;
+        }
+        // Do not humanize the next retrigger's first step into this interval.
+        // Its boundary restart owns that onset; generating it here doubles it.
+        if (settings.retrigger == 2 && step > 0)
+        {
+            const double nextBoundary = (static_cast<double> (retriggerBucket) + 1.0) * settings.interval;
+            const double nominalBeat = currentBeat + (nominalNext - clock) * beatsPerSample;
+            if (nominalBeat + 1.0e-9 >= nextBoundary)
+            {
+                flushPending();
+                continue;
+            }
+        }
         if (step == 0 || clock - nominalNext > duration)
             nominalNext = clock;
         const int baseLength = settings.style == ArpeggiatorSettings::chordTrigger ? 1
@@ -311,7 +367,10 @@ void Arpeggiator::render (const ArpeggiatorSettings& settings, const juce::MidiB
                 ? juce::jmax (1, 2 * keyCount - 2) : keyCount;
         const int length = baseLength * (settings.steps + 1);
         if (settings.repeats > 0 && step >= static_cast<juce::uint64> (length * settings.repeats))
+        {
+            flushPending();
             continue;
+        }
         const int position = static_cast<int> ((step + static_cast<juce::uint64> (settings.offset)) % static_cast<juce::uint64> (length));
         const int transpose = position / baseLength * settings.distance;
         int index = position % baseLength;
@@ -333,6 +392,7 @@ void Arpeggiator::render (const ArpeggiatorSettings& settings, const juce::MidiB
         if (settings.style == ArpeggiatorSettings::randomOther && step > 0 && step % static_cast<juce::uint64> (keyCount) == 0)
             for (int i = keyCount - 1; i > 0; --i)
                 std::swap (shuffle[static_cast<size_t> (i)], shuffle[randomNumber() % static_cast<unsigned> (i + 1)]);
+        rhythmContinuation = voiceCount > 0 || pendingCount > 0;
         if (settings.style == ArpeggiatorSettings::chordTrigger)
             for (int i = 0; i < keyCount; ++i)
                 schedule (keys[static_cast<size_t> (order[static_cast<size_t> (i)])], transpose, settings, duration);
@@ -349,6 +409,7 @@ void Arpeggiator::render (const ArpeggiatorSettings& settings, const juce::MidiB
         if (clock - nominalNext > duration)
             nominalNext = clock;
         ++step;
+        ++rhythmStep;
         nominalNext += duration;
         next = nominalNext - (settings.timingHumanize > 0 ? duration * 0.2 : 0.0);
     }

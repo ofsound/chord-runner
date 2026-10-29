@@ -1,0 +1,40 @@
+#pragma once
+#include "../engine/OutputPreview.h"
+#include <juce_gui_basics/juce_gui_basics.h>
+#include <melatonin_blur/melatonin_blur.h>
+
+namespace chordrunner::ui
+{
+    // A generalized cycle or full beat-restart window through the scheduler. Anonymous input
+    // ranks are independent of the sequencer, incoming MIDI, and stored chord tones.
+    class ArpVisualizer final : public juce::Component
+    {
+    public:
+        ArpVisualizer();
+        void update (const ArpeggiatorSettings&, double tempo, int heldNotes = 0);
+        void resized() override;
+        void paint (juce::Graphics&) override;
+        void mouseMove (const juce::MouseEvent&) override;
+        void mouseDown (const juce::MouseEvent& event) override { mouseMove (event); }
+        void mouseExit (const juce::MouseEvent&) override;
+        const std::vector<PreviewNote>& previewNotes() const { return notes; }
+        double windowBeats() const { return beats; }
+        double orderCycleBeats() const { return naturalBeats; }
+        int inputRanks() const { return rankCount; }
+
+    private:
+        ArpeggiatorSettings settings;
+        double tempo = 120, beats = 1, naturalBeats = 1, stepBeats = 0.25;
+        int stepCount = 4, hovered = -1, low = 48, high = 57;
+        int heldCount = 0, rankCount = 4, referenceBase = 48, rankSpacing = 3;
+        melatonin::DropShadow noteGlow { juce::Colour (0xff83dabb).withAlpha (0.25f), 8 };
+        juce::Label inspection;
+        std::vector<PreviewNote> notes;
+        std::vector<bool> reachesWindowEdge;
+        juce::Rectangle<float> plot, timing, velocities;
+        void rebuild();
+        juce::Rectangle<float> noteBounds (const PreviewNote&) const;
+        juce::String description() const;
+        juce::String timeText (double) const;
+    };
+}

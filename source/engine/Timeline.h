@@ -12,6 +12,7 @@ constexpr int maxNotes = 8;
 struct Chord
 {
     std::array<int, maxNotes> notes { 60, 64, 67 };
+    std::array<int, maxNotes> toneOffsets {};
     std::array<char, 64> label { 'C', '\0' };
     int noteCount = 3;
     double beats = 4.0;
@@ -20,7 +21,7 @@ struct Chord
 struct Timeline
 {
     std::array<Chord, maxChords> chords {};
-    int count = 4, channel = 1, velocity = 100, octave = 4;
+    int count = 4, channel = 1, velocity = 100, octave = 4, voiceLeading = 0;
     double tempo = 120.0;
     bool hostSync = false, sequencerEnabled = true;
     ArpeggiatorSettings arp;
@@ -43,6 +44,8 @@ struct Timeline
         return result;
     }
 };
+
+void applyVoiceLeading (Timeline&);
 
 // Call only from non-audio threads. Invalid text leaves the supplied timeline intact.
 juce::Result parseProgression (const juce::String&, Timeline&);

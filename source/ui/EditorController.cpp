@@ -32,6 +32,8 @@ bool EditorController::set (const juce::Identifier& key, const juce::var& value,
     auto next = processor.getTimelineState();
     auto target = arpeggiator ? next["arp"] : next;
     target.getDynamicObject()->setProperty (key, value);
+    if (! arpeggiator && (key == juce::Identifier ("octave") || key == juce::Identifier ("voiceLeading")))
+        next.getDynamicObject()->removeProperty ("toneOffsets");
     return commit (next, false, (arpeggiator ? "arp." : "") + key.toString());
 }
 
@@ -39,6 +41,7 @@ bool EditorController::applyDraft()
 {
     auto next = processor.getTimelineState();
     next.getDynamicObject()->setProperty ("progression", draft);
+    next.getDynamicObject()->removeProperty ("toneOffsets");
     return commit (next, true);
 }
 

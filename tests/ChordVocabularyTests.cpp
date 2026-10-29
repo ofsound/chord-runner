@@ -48,7 +48,7 @@ TEST_CASE ("Every glossary spelling produces its advertised chord formula", "[pa
         {
             INFO (suffix.toStdString());
             REQUIRE (spellings.insert (suffix).second);
-            for (const auto& duration : { "", "@1/2", "@2" })
+            for (const auto& duration : { "", "@1/2", "@2", "x1/2", "x2", "X1/2", "X2" })
             {
                 INFO (duration);
                 Timeline timeline;
@@ -61,7 +61,7 @@ TEST_CASE ("Every glossary spelling produces its advertised chord formula", "[pa
                     CHECK (chord.notes[static_cast<size_t> (i)] == expected[static_cast<size_t> (i)]);
                     CHECK (static_cast<int> ((*intervals)[i]) == expected[static_cast<size_t> (i)] - 60);
                 }
-                CHECK (chord.beats == Catch::Approx (juce::String (duration).isEmpty() ? 4.0 : juce::String (duration) == "@2" ? 8.0 : 2.0));
+                CHECK (chord.beats == Catch::Approx (juce::String (duration).isEmpty() ? 4.0 : juce::String (duration).substring (1) == "2" ? 8.0 : 2.0));
                 CHECK (juce::String::fromUTF8 (chord.label.data()) == "C" + suffix + duration);
             }
         }
@@ -153,4 +153,34 @@ TEST_CASE ("Invalid jazz suffixes and out-of-range extensions preserve the last 
     timeline.octave = 4;
     CHECK (parseProgression (juce::String::repeatedString ("C13 ", 64), timeline).wasOk());
     CHECK (parseProgression (juce::String::repeatedString ("C13 ", 65), timeline).failed());
+}
+
+TEST_CASE ("Explicit duration separators share decimal fraction and validation rules", "[vocabulary]")
+{
+    for (const auto* separator : { "@", "x", "X" })
+    {
+        Timeline timeline;
+        REQUIRE (parseProgression ("C7" + juce::String (separator) + "2.5/0.5 Dm9" + separator + "1/16 Cmaj7" + separator + "16", timeline).wasOk());
+        CHECK (timeline.chords[0].beats == Catch::Approx (20));
+        CHECK (timeline.chords[1].beats == Catch::Approx (0.25));
+        CHECK (timeline.chords[2].beats == Catch::Approx (64));
+        const auto original = timeline;
+        for (const auto* invalid : { "", "0", "1/0", "17", "1/100", "NaN", "2foo", "2x2", "2X2", "2@2" })
+        {
+            INFO (separator << invalid);
+            CHECK (parseProgression ("C7" + juce::String (separator) + invalid, timeline).failed());
+            CHECK (timeline.count == original.count);
+            CHECK (timeline.chords[0].beats == Catch::Approx (original.chords[0].beats));
+            CHECK (timeline.chords[0].notes == original.chords[0].notes);
+        }
+    }
+    PluginProcessor processor;
+    auto state = processor.getTimelineState();
+    state.getDynamicObject()->setProperty ("progression", "C7x2 - Dm9X1/2 - G7@1/2");
+    REQUIRE (processor.setTimelineState (state).wasOk());
+    juce::MemoryBlock saved;
+    processor.getStateInformation (saved);
+    PluginProcessor restored;
+    restored.setStateInformation (saved.getData(), static_cast<int> (saved.getSize()));
+    CHECK (restored.getTimelineState()["progression"].toString() == "C7x2 - Dm9X1/2 - G7@1/2");
 }

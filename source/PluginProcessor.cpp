@@ -70,6 +70,7 @@ void PluginProcessor::processBlock (juce::AudioBuffer<float>& audio, juce::MidiB
         internalBeat = patternOrigin = 0.0;
         queuedPattern = -2;
     }
+    trackInputKeys (midi, samples, reset);
     bypassed = false;
     previousHostSync = sync;
     double beat = internalBeat, bpm = master.tempo;
@@ -248,6 +249,7 @@ void PluginProcessor::processBlockBypassed (juce::AudioBuffer<float>& audio, juc
     sequenceMidi.clear();
     if (audio.getNumSamples() > 0)
     {
+        trackInputKeys (midi, audio.getNumSamples(), ! bypassed);
         engine.stop (previousArp ? sequenceMidi : outgoingMidi);
         arpeggiator.stop (outgoingMidi);
         if (! bypassed)
@@ -259,6 +261,43 @@ void PluginProcessor::processBlockBypassed (juce::AudioBuffer<float>& audio, juc
     playingStatus.store (false);
     chordStatus.store (-1);
     resetRequested.store (true, std::memory_order_release);
+}
+
+void PluginProcessor::trackInputKeys (const juce::MidiBuffer& input, int samples, bool clear)
+{
+    if (clear || input.data.size() > maxInputBytes)
+    {
+        inputKeysDown.fill (false);
+        inputKeyCount = 0;
+    }
+    if (input.data.size() <= maxInputBytes)
+        for (const auto event : input)
+        {
+            if (event.samplePosition < 0 || event.samplePosition >= samples || event.numBytes < 1) continue;
+            const auto* bytes = event.data;
+            if (bytes[0] == 0xff && event.numBytes == 1)
+            {
+                inputKeysDown.fill (false);
+                inputKeyCount = 0;
+            }
+            if (event.numBytes != 3 || bytes[1] > 127 || bytes[2] > 127) continue;
+            const int channel = bytes[0] & 0x0f;
+            const int type = bytes[0] & 0xf0;
+            if (type == 0xb0 && (bytes[1] == 120 || bytes[1] == 123))
+            {
+                for (int key = 0; key < 128; ++key)
+                {
+                    auto& down = inputKeysDown[static_cast<size_t> (channel * 128 + key)];
+                    if (down) { down = false; --inputKeyCount; }
+                }
+            }
+            // Notes 0..16 are consumed as pattern selection, never arp input.
+            if ((type != 0x80 && type != 0x90) || bytes[1] <= 16) continue;
+            auto& down = inputKeysDown[static_cast<size_t> (channel * 128 + bytes[1])];
+            const bool next = type == 0x90 && bytes[2] > 0;
+            if (next != down) { down = next; inputKeyCount += next ? 1 : -1; }
+        }
+    heldInputStatus.store (inputKeyCount, std::memory_order_relaxed);
 }
 
 void PluginProcessor::releasePassedNotes (juce::MidiBuffer& midi)
@@ -326,6 +365,7 @@ juce::var PluginProcessor::getTransportState() const
     object->setProperty ("beat", beatStatus.load());
     object->setProperty ("tempo", tempoStatus.load());
     object->setProperty ("activeChord", chordStatus.load());
+    object->setProperty ("heldInputNotes", resetRequested.load (std::memory_order_acquire) ? 0 : heldInputStatus.load (std::memory_order_relaxed));
     object->setProperty ("hostAvailable", hostAvailable.load());
     object->setProperty ("standalone", isStandalone());
     object->setProperty ("revision", revision.load());

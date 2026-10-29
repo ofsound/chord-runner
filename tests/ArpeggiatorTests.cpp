@@ -490,3 +490,50 @@ TEST_CASE ("Oversized MIDI input fails silent and clears latched output", "[arp]
     processor.processBlock (audio, midi);
     CHECK (midi.isEmpty());
 }
+
+TEST_CASE ("Held input count tracks physical keys without counting generated MIDI or selection notes", "[arp][processor]")
+{
+    PluginProcessor processor;
+    configure (processor, false, true);
+    prepareArp (processor);
+    juce::AudioBuffer<float> audio (2, 512);
+    juce::MidiBuffer midi;
+    auto count = [&] { return static_cast<int> (processor.getTransportState()["heldInputNotes"]); };
+    addChord (midi);
+    midi.addEvent (juce::MidiMessage::noteOn (3, 60, static_cast<juce::uint8> (100)), 1);
+    processor.processBlock (audio, midi);
+    CHECK (count() == 3);
+    midi.clear();
+    processor.processBlock (audio, midi);
+    CHECK (count() == 3);
+    midi.clear();
+    midi.addEvent (juce::MidiMessage::noteOn (4, 60, static_cast<juce::uint8> (100)), 0);
+    midi.addEvent (juce::MidiMessage::noteOff (3, 60), 1);
+    processor.processBlock (audio, midi);
+    CHECK (count() == 3);
+    midi.clear();
+    midi.addEvent (juce::MidiMessage::noteOn (3, 67, static_cast<juce::uint8> (0)), 0);
+    processor.processBlock (audio, midi);
+    CHECK (count() == 2);
+    midi.clear();
+    midi.addEvent (juce::MidiMessage::noteOn (1, 16, static_cast<juce::uint8> (100)), 0);
+    processor.processBlock (audio, midi);
+    CHECK (count() == 2);
+    midi.clear();
+    midi.addEvent (juce::MidiMessage::controllerEvent (3, 123, 0), 0);
+    processor.processBlock (audio, midi);
+    CHECK (count() == 1);
+    midi.clear();
+    midi.addEvent (juce::MidiMessage::controllerEvent (4, 120, 0), 0);
+    processor.processBlock (audio, midi);
+    CHECK (count() == 0);
+    midi.clear();
+    addChord (midi);
+    processor.processBlock (audio, midi);
+    REQUIRE (count() == 3);
+    processor.panic();
+    CHECK (count() == 0);
+    midi.clear();
+    processor.processBlock (audio, midi);
+    CHECK (count() == 0);
+}

@@ -51,7 +51,7 @@ juce::Result parse (const juce::String& text, Timeline& destination, juce::Strin
             ++rootLength;
         }
         const auto tail = token.substring (rootLength);
-        const auto at = tail.indexOfChar ('@');
+        const auto at = tail.indexOfAnyOf ("@xX");
         const auto explicitQuality = at >= 0 ? tail.substring (0, at) : juce::String {};
         const auto explicitDuration = at >= 0 ? tail.substring (at + 1) : juce::String {};
         const juce::var* quality = nullptr;
@@ -80,7 +80,7 @@ juce::Result parse (const juce::String& text, Timeline& destination, juce::Strin
                     consider (entry, alias.toString());
         }
         if (quality == nullptr)
-            return juce::Result::fail ("Cannot read '" + token + "'. Open Chord glossary; use @ for durations (Dm9@2). Slash bass chords are not supported.");
+            return juce::Result::fail ("Cannot read '" + token + "'. Open Chord glossary; use @, x or X for durations (Dm9x2). Slash bass chords are not supported.");
 
         auto& chord = next.chords[static_cast<size_t> (next.count++)];
         chord = Chord {};
@@ -121,6 +121,8 @@ juce::Result parse (const juce::String& text, Timeline& destination, juce::Strin
     }
     if (next.count == 0)
         return juce::Result::fail ("Enter a progression, for example C - G - Am - F.");
+    for (auto& chord : next.chords) chord.toneOffsets.fill (0);
+    applyVoiceLeading (next);
     destination = next;
     if (migratedText != nullptr)
         *migratedText = migrated ? migratedTokens.joinIntoString (" - ") : text;

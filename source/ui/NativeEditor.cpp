@@ -58,6 +58,86 @@ void PerformanceLook::drawButtonBackground (juce::Graphics& g, juce::Button& but
     g.drawRoundedRectangle (area, power ? 15.0f : 5.0f, 1.0f);
 }
 
+void PerformanceLook::drawLinearSlider (juce::Graphics& g, int x, int y, int width, int height,
+    float position, float, float, juce::Slider::SliderStyle, juce::Slider& slider)
+{
+    if (slider.getComponentID() == "arp.interval") return;
+    const float alpha = slider.isEnabled() ? 1.0f : 0.3f;
+    const float left = static_cast<float> (x), right = static_cast<float> (x + width);
+    const float middle = static_cast<float> (y) + static_cast<float> (height) * 0.5f;
+    g.setColour (juce::Colour (0xff354047).withAlpha (alpha));
+    g.fillRoundedRectangle (left, middle - 2, static_cast<float> (width), 4, 2);
+    g.setColour (amber.withAlpha (alpha * 0.75f));
+    g.fillRoundedRectangle (left, middle - 2, juce::jmax (0.0f, position - left), 4, 2);
+    if (slider.getMinimum() < 0)
+    {
+        const float zero = left + static_cast<float> (slider.valueToProportionOfLength (0)) * static_cast<float> (width);
+        g.setColour (foreground.withAlpha (0.35f * alpha)); g.fillRect (zero, middle - 5, 1.0f, 10.0f);
+    }
+    const float thumb = juce::jlimit (left, right, position);
+    g.setColour (amber.withAlpha (alpha)); g.fillRoundedRectangle (thumb - 2, middle - 6, 4, 12, 1.5f);
+    if (slider.hasKeyboardFocus (true))
+    {
+        g.setColour (green); g.drawRoundedRectangle (slider.getLocalBounds().toFloat().reduced (0.5f), 4, 1);
+    }
+}
+void PerformanceLook::drawComboBox (juce::Graphics& g, int width, int height, bool down, int, int, int, int, juce::ComboBox& box)
+{
+    const auto bounds = juce::Rectangle<float> (0, 0, static_cast<float> (width), static_cast<float> (height)).reduced (0.5f);
+    const float alpha = box.isEnabled() ? 1.0f : 0.3f;
+    g.setColour (juce::Colour (down || box.isMouseOver() ? 0xff2a383e : 0xff202b31).withAlpha (alpha));
+    g.fillRoundedRectangle (bounds, 5);
+    g.setColour ((box.hasKeyboardFocus (true) ? green : juce::Colour (0xff3b4c53)).withAlpha (alpha));
+    g.drawLine (5, bounds.getBottom(), bounds.getRight() - 5, bounds.getBottom(), 1);
+    juce::Path arrow;
+    const float cx = static_cast<float> (width) - 14, cy = static_cast<float> (height) * 0.5f;
+    arrow.startNewSubPath (cx - 3, cy - 1); arrow.lineTo (cx, cy + 2); arrow.lineTo (cx + 3, cy - 1);
+    g.setColour (green.withAlpha (alpha)); g.strokePath (arrow, juce::PathStrokeType (1.4f));
+}
+juce::Font PerformanceLook::getComboBoxFont (juce::ComboBox&) { return juce::FontOptions (13.0f); }
+void PerformanceLook::positionComboBoxText (juce::ComboBox& box, juce::Label& label)
+{
+    label.setBounds (8, 0, box.getWidth() - 28, box.getHeight());
+    label.setFont (getComboBoxFont (box));
+}
+void PerformanceLook::drawGroupComponentOutline (juce::Graphics& g, int w, int h, const juce::String& text,
+    const juce::Justification&, juce::GroupComponent&)
+{
+    const auto area = juce::Rectangle<float> (0, 0, static_cast<float> (w), static_cast<float> (h));
+    g.setColour (juce::Colour (0xff151e23)); g.fillRoundedRectangle (area, 6);
+    g.setColour (juce::Colour (0xff304047)); g.drawHorizontalLine (0, 8, static_cast<float> (w - 8));
+    g.setColour (green); g.setFont (juce::FontOptions (10.0f, juce::Font::bold));
+    g.drawText (text, 10, 5, w - 20, 15, juce::Justification::centredLeft);
+}
+void PerformanceLook::drawLabel (juce::Graphics& g, juce::Label& label)
+{
+    if (dynamic_cast<juce::Slider*> (label.getParentComponent()) == nullptr)
+    {
+        juce::LookAndFeel_V4::drawLabel (g, label);
+        return;
+    }
+    const auto area = label.getLocalBounds().toFloat().reduced (0.5f);
+    const float alpha = label.isEnabled() ? 1.0f : 0.3f;
+    g.setColour (juce::Colour (0xff253139).withAlpha (alpha)); g.fillRoundedRectangle (area, 4);
+    if (label.hasKeyboardFocus (true))
+    {
+        g.setColour (green); g.drawRoundedRectangle (area, 4, 1);
+    }
+    if (! label.isBeingEdited())
+    {
+        g.setColour (foreground.withAlpha (alpha)); g.setFont (juce::FontOptions (12.0f));
+        g.drawText (label.getText(), label.getLocalBounds().reduced (3, 0), juce::Justification::centred);
+    }
+}
+
+juce::Slider::SliderLayout PerformanceLook::getSliderLayout (juce::Slider& slider)
+{
+    if (slider.getComponentID() != "arp.interval") return juce::LookAndFeel_V4::getSliderLayout (slider);
+    juce::Slider::SliderLayout layout;
+    layout.textBoxBounds = slider.getLocalBounds();
+    return layout;
+}
+
 void PatternPad::paintButton (juce::Graphics& g, bool over, bool down)
 {
     const auto area = getLocalBounds().toFloat().reduced (1.0f);
@@ -72,24 +152,7 @@ void PatternPad::paintButton (juce::Graphics& g, bool over, bool down)
     g.drawRoundedRectangle (area, 6.0f, queued || selected ? 1.5f : 1.0f);
     g.setFont (juce::FontOptions (14.0f).withStyle ("Bold"));
     g.setColour (active ? green : foreground);
-    if (getWidth() > 78)
-        g.drawText (juce::String (slot + 1).paddedLeft ('0', 2), 9, 4, 26, getHeight() - 8, juce::Justification::centredLeft);
-    else
-        g.drawText (juce::String (slot + 1).paddedLeft ('0', 2), 4, 4, getWidth() - 8, getHeight() / 2, juce::Justification::centred);
-    if (getWidth() > 78)
-    {
-        g.setFont (juce::FontOptions (11.0f));
-        g.setColour (muted);
-        g.drawText (patternName, 37, 4, getWidth() - 44, 18, juce::Justification::centredLeft);
-        g.setFont (juce::FontOptions (9.0f));
-        g.drawText (juce::MidiMessage::getMidiNoteName (slot, true, true, 5), 37, 22, getWidth() - 44, 14, juce::Justification::centredLeft);
-    }
-    if (getWidth() <= 78)
-    {
-        g.setColour (muted);
-        g.setFont (juce::FontOptions (9.0f));
-        g.drawText (juce::MidiMessage::getMidiNoteName (slot, true, true, 5), 4, getHeight() / 2 + 2, getWidth() - 8, getHeight() / 2 - 6, juce::Justification::centred);
-    }
+    g.drawText (juce::String (slot + 1), getLocalBounds().reduced (4), juce::Justification::centred);
     if (queued)
     {
         g.setColour (amber);
@@ -100,7 +163,15 @@ void PatternPad::paintButton (juce::Graphics& g, bool over, bool down)
 TimelineView::TimelineView (EditorController& c) : controller (c)
 {
     identify (*this, "timeline", "Chord timeline");
+    setViewportIgnoreDragFlag (true);
     setWantsKeyboardFocus (true);
+}
+TimelineView::~TimelineView() { finishDrag(); }
+void TimelineView::finishDrag()
+{
+    if (dragTone >= 0) controller.processor.endEditGesture();
+    dragTone = -1; dragSource = -1;
+    repaint();
 }
 void TimelineView::paint (juce::Graphics& g)
 {
@@ -120,8 +191,20 @@ void TimelineView::paint (juce::Graphics& g)
                 lowest = juce::jmin (lowest, static_cast<int> (note));
                 highest = juce::jmax (highest, static_cast<int> (note));
             }
+    if (previewRevision != controller.refreshSerial)
+    {
+        previewRevision = controller.refreshSerial;
+        outputPreview = controller.processor.getOutputPreview();
+    }
+    for (const auto& note : outputPreview)
+    {
+        lowest = juce::jmin (lowest, note.note);
+        highest = juce::jmax (highest, note.note);
+    }
     lowest = juce::jmax (0, lowest - 2);
     highest = juce::jmin (127, highest + 2);
+    if (dragTone >= 0) { lowest = dragLow; highest = dragHigh; }
+    gridLow = lowest; gridHigh = highest;
     constexpr float keyWidth = 46.0f, top = 54.0f;
     const auto width = static_cast<float> (getWidth()) - keyWidth;
     const auto rowHeight = (static_cast<float> (getHeight()) - top) / static_cast<float> (highest - lowest + 1);
@@ -150,7 +233,7 @@ void TimelineView::paint (juce::Graphics& g)
         g.fillRect (x, 24.0f, chordWidth - 1.0f, 30.0f);
         g.setColour (sounding ? green : foreground);
         g.setFont (juce::FontOptions (14.0f));
-        g.drawText (chord["label"].toString(), juce::Rectangle<float> (x + 6, 23, chordWidth - 10, 18), juce::Justification::centredLeft);
+        g.drawText (chord["label"].toString() + (static_cast<bool> (chord["edited"]) ? " *" : ""), juce::Rectangle<float> (x + 6, 23, chordWidth - 10, 18), juce::Justification::centredLeft);
         g.setFont (juce::FontOptions (10.0f));
         g.setColour (muted);
         g.drawText (juce::String (static_cast<double> (chord["beats"]) / 4.0, 2) + " bars",
@@ -160,8 +243,14 @@ void TimelineView::paint (juce::Graphics& g)
             {
                 const auto y = top + static_cast<float> (highest - static_cast<int> (note)) * rowHeight;
                 const juce::Rectangle<float> rect (x + 1, y + 1, juce::jmax (1.0f, chordWidth - 3), juce::jmax (2.0f, rowHeight - 2));
-                g.setColour (sounding ? green : juce::Colour (0xff426f5b));
+                g.setColour (outputPreview.empty() ? (sounding ? green : juce::Colour (0xff426f5b)) : juce::Colour (0xff426f5b).withAlpha (dragTone >= 0 ? 0.7f : 0.35f));
                 g.fillRoundedRectangle (rect, 2.0f);
+                if ((i == hoverChord && static_cast<int> (note) == hoverPitch)
+                    || (dragTone >= 0 && i == selected && static_cast<int> (note) == draggedPitch))
+                {
+                    g.setColour (foreground);
+                    g.drawRoundedRectangle (rect, 2.0f, 1.0f);
+                }
                 if (rowHeight > 12 && chordWidth > 34)
                 {
                     g.setColour (sounding ? background : juce::Colour (0xffcae4d7));
@@ -181,12 +270,35 @@ void TimelineView::paint (juce::Graphics& g)
         g.setColour (muted);
         g.drawText (juce::String (bar + 1), juce::roundToInt (x) + 5, 2, 40, 20, juce::Justification::centredLeft);
     }
+    // Output phrase sits above the dim source-chord bands, using note gates
+    // and velocities emitted by the same native sequence/arp engines.
+    for (const auto& note : outputPreview)
+    {
+        const float x = xAt (note.start);
+        const float y = top + static_cast<float> (highest - note.note) * rowHeight;
+        const float noteWidth = juce::jmax (1.5f, xAt (note.end) - x - 0.75f);
+        g.setColour (amber.withAlpha (0.5f + 0.5f * static_cast<float> (note.velocity) / 127.0f));
+        g.fillRoundedRectangle ({ x, y + 0.5f, noteWidth, juce::jmax (1.5f, rowHeight - 1.0f) }, 1.0f);
+    }
+    if (! outputPreview.empty())
+    {
+        g.setColour (amber);
+        g.setFont (juce::FontOptions (10.0f));
+        g.drawText (total > 64.0 ? "ARP / first 16 bars" : "ARP / output preview", getWidth() - 155, 2, 145, 18, juce::Justification::centredRight);
+    }
     g.setColour (border);
     g.drawVerticalLine (46, 0, static_cast<float> (getHeight()));
     if (sequenceOn && static_cast<bool> (controller.transport["playing"]))
     {
         g.setColour (green);
         g.fillRect (xAt (static_cast<double> (controller.transport["beat"])), 24.0f, 2.0f, static_cast<float> (getHeight()) - 24);
+    }
+    if (dragTone >= 0 || hoverPitch >= 0)
+    {
+        const int displayPitch = dragTone >= 0 ? draggedPitch : hoverPitch;
+        g.setColour (foreground);
+        g.setFont (juce::FontOptions (12.0f));
+        g.drawText (noteName (displayPitch) + "  /  " + juce::String (displayPitch), getWidth() - 140, 24, 130, 25, juce::Justification::centredRight);
     }
     if (hasKeyboardFocus (false))
     {
@@ -196,19 +308,114 @@ void TimelineView::paint (juce::Graphics& g)
 }
 void TimelineView::mouseDown (const juce::MouseEvent& event)
 {
+    if (! event.mods.isLeftButtonDown() || (dragTone >= 0 && event.source.getIndex() != dragSource)) return;
+    finishDrag();
+    if (event.position.x < 46.0f || getWidth() <= 46) return;
     const auto beat = (event.position.x - 46.0f) / static_cast<float> (getWidth() - 46) * static_cast<double> (controller.state["totalBeats"]);
     if (const auto* chords = controller.state["chords"].getArray())
         for (int i = 0; i < chords->size(); ++i)
         {
             const auto& chord = chords->getReference (i);
             const auto start = static_cast<double> (chord["startBeat"]);
-            if (beat >= start && beat < start + static_cast<double> (chord["beats"]))
-                selected = i;
+            if (beat < start || beat >= start + static_cast<double> (chord["beats"])) continue;
+            selected = i;
+            if (event.position.y < 54.0f || controller.processor.selectedPattern() < 0) break;
+            const float rowH = (static_cast<float> (getHeight()) - 54.0f) / static_cast<float> (gridHigh - gridLow + 1);
+            float distance = juce::jmax (4.0f, rowH * 0.6f);
+            if (const auto* notes = chord["notes"].getArray())
+                for (int n = 0; n < notes->size(); ++n)
+                {
+                    const int pitch = static_cast<int> (notes->getReference (n));
+                    const float y = 54.0f + (static_cast<float> (gridHigh - pitch) + 0.5f) * rowH;
+                    const float delta = std::abs (event.position.y - y);
+                    if (delta <= distance) { dragTone = n; dragPitch = pitch; distance = delta; }
+                }
+            if (dragTone >= 0)
+            {
+                dragSource = event.source.getIndex();
+                dragLow = gridLow; dragHigh = gridHigh;
+                dragY = event.position.y;
+                dragStep = juce::jmax (8.0f, rowH);
+                dragRevision = static_cast<int> (controller.state["revision"]);
+                draggedPitch = dragPitch; dragChanged = false;
+                controller.processor.beginEditGesture();
+                if (isShowing()) grabKeyboardFocus();
+            }
+            break;
         }
     repaint();
 }
+void TimelineView::mouseMove (const juce::MouseEvent& event)
+{
+    int chordHit = -1, pitchHit = -1;
+    if (event.position.x >= 46.0f && event.position.y >= 54.0f && getWidth() > 46)
+    {
+        const auto beat = (event.position.x - 46.0f) / static_cast<float> (getWidth() - 46) * static_cast<double> (controller.state["totalBeats"]);
+        const float rowH = (static_cast<float> (getHeight()) - 54.0f) / static_cast<float> (gridHigh - gridLow + 1);
+        float distance = juce::jmax (4.0f, rowH * 0.6f);
+        if (const auto* chords = controller.state["chords"].getArray())
+            for (int c = 0; c < chords->size(); ++c)
+            {
+                const auto& chord = chords->getReference (c);
+                const double start = static_cast<double> (chord["startBeat"]);
+                if (beat < start || beat >= start + static_cast<double> (chord["beats"])) continue;
+                if (const auto* notes = chord["notes"].getArray())
+                    for (const auto& note : *notes)
+                    {
+                        const int pitch = static_cast<int> (note);
+                        const float y = 54.0f + (static_cast<float> (gridHigh - pitch) + 0.5f) * rowH;
+                        const float delta = std::abs (event.position.y - y);
+                        if (delta <= distance) { chordHit = c; pitchHit = pitch; distance = delta; }
+                    }
+            }
+    }
+    if (hoverChord != chordHit || hoverPitch != pitchHit)
+    {
+        hoverChord = chordHit; hoverPitch = pitchHit;
+        setMouseCursor (pitchHit >= 0 ? juce::MouseCursor::UpDownResizeCursor : juce::MouseCursor::NormalCursor);
+        repaint();
+    }
+}
+void TimelineView::mouseExit (const juce::MouseEvent&)
+{
+    hoverChord = hoverPitch = -1;
+    setMouseCursor (juce::MouseCursor::NormalCursor); repaint();
+}
+void TimelineView::mouseDrag (const juce::MouseEvent& event)
+{
+    if (dragTone < 0 || event.source.getIndex() != dragSource) return;
+    if (static_cast<int> (controller.processor.getTransportState()["revision"]) != dragRevision)
+    {
+        finishDrag(); return;
+    }
+    const float sensitivity = dragStep * (event.mods.isShiftDown() ? 2.0f : 1.0f);
+    const int pitch = juce::jlimit (0, 127, dragPitch + juce::roundToInt ((dragY - event.position.y) / sensitivity));
+    if (pitch == draggedPitch) return;
+    const auto result = controller.processor.editChordTone (selected, dragTone, pitch, dragRevision);
+    controller.error = result.getErrorMessage();
+    if (result.wasOk())
+    {
+        draggedPitch = pitch;
+        dragChanged = true;
+        dragRevision = static_cast<int> (controller.processor.getTimelineState()["revision"]);
+    }
+    controller.refresh();
+    repaint();
+}
+void TimelineView::mouseUp (const juce::MouseEvent& event)
+{
+    if (event.source.getIndex() == dragSource) finishDrag();
+}
 bool TimelineView::keyPressed (const juce::KeyPress& key)
 {
+    if (dragTone >= 0 && key == juce::KeyPress::escapeKey)
+    {
+        const bool revert = dragChanged && static_cast<int> (controller.processor.getTransportState()["revision"]) == dragRevision;
+        finishDrag();
+        if (revert) controller.undo();
+        return true;
+    }
+    if (dragTone >= 0) return false;
     if (key != juce::KeyPress::leftKey && key != juce::KeyPress::rightKey)
         return false;
     const auto* chords = controller.state["chords"].getArray();
@@ -225,7 +432,7 @@ ChordGlossary::ChordGlossary (std::function<void (juce::String)> callback) : onI
         addAndMakeVisible (component);
     labelStyle (title, "Chord glossary");
     title.setFont (juce::FontOptions (22.0f));
-    labelStyle (hint, "One chord = one bar. C9 is a ninth chord; C9@2 lasts two bars. Use spaces, - or | between chords.\n"
+    labelStyle (hint, "One chord = one bar. C9 is a ninth chord; C9@2 or C9x2 lasts two bars. Use spaces, - or | between chords.\n"
                       "Formulas are degrees above the root. 9 / 11 / 13 sit above the octave. C4 = MIDI 60.\n"
                       "m7 is minor; M7 is major. C6add9 / C69 = six-nine. Slash bass chords are not supported.");
     labelStyle (count, "");
@@ -364,12 +571,63 @@ NativeEditor::NumberControl::NumberControl (const juce::String& id, const juce::
     slider.setScrollWheelEnabled (false);
     slider.setChangeNotificationOnlyOnRelease (false);
     slider.setTooltip (name + ": drag to adjust, click the value to type, double-click to reset.");
+    if (id == "arp.interval")
+    {
+        slider.textFromValueFunction = [] (double value)
+        {
+            auto number = juce::String (value, 4).trimCharactersAtEnd ("0").trimCharactersAtEnd (".");
+            return number + (std::abs (value - 1) < 1.0e-8 ? " beat" : " beats");
+        };
+        slider.valueFromTextFunction = [] (const juce::String& text) { return juce::jlimit (1.0, 64.0, std::round (text.getDoubleValue())); };
+        slider.setTextValueSuffix ({});
+        slider.updateText();
+        identify (decrease, "arp.interval.decrease", "Decrease restart interval by one beat");
+        identify (increase, "arp.interval.increase", "Increase restart interval by one beat");
+        for (auto* button : { &decrease, &increase })
+        {
+            addAndMakeVisible (button);
+            button->setRepeatSpeed (400, 90, 30);
+        }
+        decrease.onClick = [this] { slider.keyPressed (juce::KeyPress (juce::KeyPress::leftKey)); };
+        increase.onClick = [this] { slider.keyPressed (juce::KeyPress (juce::KeyPress::rightKey)); };
+        refreshStepper();
+    }
+}
+bool NativeEditor::NumberControl::ValueSlider::keyPressed (const juce::KeyPress& key)
+{
+    if (getComponentID() == "arp.interval")
+    {
+        const int code = key.getKeyCode();
+        if (code == juce::KeyPress::upKey || code == juce::KeyPress::rightKey)
+        {
+            setValue (juce::jlimit (1.0, 64.0, std::floor (getValue() + 1.0e-8) + 1), juce::sendNotificationSync);
+            return true;
+        }
+        if (code == juce::KeyPress::downKey || code == juce::KeyPress::leftKey)
+        {
+            setValue (juce::jlimit (1.0, 64.0, std::ceil (getValue() - 1.0e-8) - 1), juce::sendNotificationSync);
+            return true;
+        }
+    }
+    return juce::Slider::keyPressed (key);
+}
+void NativeEditor::NumberControl::refreshStepper()
+{
+    decrease.setEnabled (slider.getValue() > 1);
+    increase.setEnabled (slider.getValue() < 64);
 }
 void NativeEditor::NumberControl::resized()
 {
     auto area = getLocalBounds();
     const auto* editor = findParentComponentOfClass<NativeEditor>();
     label.setBounds (area.removeFromTop (editor != nullptr && editor->phoneLayout ? 16 : 18));
+    if (slider.getComponentID() == "arp.interval")
+    {
+        const int preferredWidth = editor != nullptr && editor->phoneLayout ? 40 : 28;
+        const int buttonWidth = juce::jmin (preferredWidth, juce::jmax (24, (area.getWidth() - 46) / 2));
+        decrease.setBounds (area.removeFromLeft (buttonWidth)); area.removeFromLeft (3);
+        increase.setBounds (area.removeFromRight (buttonWidth)); area.removeFromRight (3);
+    }
     slider.setBounds (area);
 }
 NativeEditor::ChoiceControl::ChoiceControl (const juce::String& id, const juce::String& name, const juce::StringArray& items)
@@ -426,7 +684,7 @@ NativeEditor::NativeEditor (PluginProcessor& processor) : controller (processor)
         addAndMakeVisible (component);
     for (auto* component : std::initializer_list<juce::Component*> { &sequencer, &arpeggiator, &progression, &apply, &example, &message, &play, &tempo, &clock, &octave, &velocity, &channel, &timelineViewport, &summary, &hold })
         content.addAndMakeVisible (component);
-    const juce::StringArray groupNames { "ORDER", "TIMING", "PITCH", "HUMANIZE", "ENVELOPE" };
+    const juce::StringArray groupNames { "PHRASE", "TIMING", "PITCH", "HUMANIZE", "VELOCITY" };
     for (size_t i = 0; i < groups.size(); ++i)
     {
         groups[i].setText (groupNames[static_cast<int> (i)]);
@@ -446,7 +704,10 @@ NativeEditor::NativeEditor (PluginProcessor& processor) : controller (processor)
     identify (progression, "progression", "Chord progression");
     progression.setMultiLine (false);
     progression.setInputRestrictions (4096);
-    progression.setFont (juce::FontOptions (21.0f));
+    progression.setFont (juce::FontOptions (28.0f));
+    progression.setJustification (juce::Justification::centredLeft);
+    progression.setBorder (juce::BorderSize<int> (0, 16, 0, 16));
+    progression.setIndents (0, 0);
     progression.setTextToShowWhenEmpty ("C - G - Am - F", muted);
     progression.onTextChange = [this]
     {
@@ -456,6 +717,8 @@ NativeEditor::NativeEditor (PluginProcessor& processor) : controller (processor)
             controller.error.clear();
             message.setText (controller.dirty() ? "Unapplied changes" : "One chord. One bar. Fixed 4/4.", juce::dontSendNotification);
             message.setColour (juce::Label::textColourId, muted);
+            message.setVisible (controller.dirty());
+            summary.setVisible (! controller.dirty());
         }
     };
     progression.onReturnKey = [this] { controller.applyDraft(); };
@@ -510,6 +773,11 @@ NativeEditor::NativeEditor (PluginProcessor& processor) : controller (processor)
     toggle (hold, "hold", true);
     toggle (velocityEnabled, "velocityEnabled", true);
     toggle (velocityRetrigger, "velocityRetrigger", true);
+    retrigger.combo.setTooltip ("Off: keep the phrase moving. Note: restart on incoming note-ons. Beat: restart on the beat grid.");
+    interval.slider.setTooltip ("Reset the arp every 1 to 64 beats in Beat mode. Use - and +, arrow keys, or type a whole number.");
+    steps.slider.setTooltip ("Additional transposed passes after the original phrase. Zero plays only the original pitches.");
+    distance.slider.setTooltip ("Semitones added per extra pass. 12 = octave up, -12 = octave down. Requires extra passes.");
+    velocityRetrigger.setTooltip ("Restart the velocity envelope whenever the phrase retriggers.");
     for (auto* label : { &message, &status, &summary })
         labelStyle (*label, "");
     // Each power control belongs to the module it enables.
@@ -517,11 +785,28 @@ NativeEditor::NativeEditor (PluginProcessor& processor) : controller (processor)
     content.addAndMakeVisible (arpModule);
     for (auto* component : std::initializer_list<juce::Component*> { &sequencer, &progression, &apply, &message, &timelineViewport, &summary, &patternName, &fit, &patternMenu, &glossary })
         sequenceModule.addAndMakeVisible (component);
+    arpModule.addChildComponent (arpVisualizer);
+    arpModule.addChildComponent (phonePreview);
+    phonePreview.setComponentID ("arp.preview.toggle");
+    phonePreview.setClickingTogglesState (true);
+    phonePreview.onClick = [this] { layoutPhone(); };
+    for (auto* hint : { &pitchHint, &humanizeHint })
+    {
+        labelStyle (*hint, "");
+        hint->setFont (juce::FontOptions (11.0f));
+        hint->setJustificationType (juce::Justification::topLeft);
+        arpModule.addAndMakeVisible (hint);
+    }
+    pitchHint.setText ("Each extra pass shifts the phrase again.\n12 semitones = one octave.", juce::dontSendNotification);
+    humanizeHint.setText ("Subtle variation per note.\nPreview shows one possible take.", juce::dontSendNotification);
     example.setVisible (false);
     for (auto* component : std::initializer_list<juce::Component*> { &arpeggiator, &style, &offset, &repeats, &rateMode, &rate, &freeRate, &gate, &swing, &swingSubdivision, &steps, &distance, &retrigger, &interval, &hold, &velocityEnabled, &target, &decay, &velocityRetrigger, &velocityHumanize, &timingHumanize })
         arpModule.addAndMakeVisible (component);
     for (auto& group : groups)
+    {
         arpModule.addAndMakeVisible (group);
+        group.toBack();
+    }
     for (auto* component : std::initializer_list<juce::Component*> { &projectTitle, &projectMenu, &undoButton, &redoButton, &mutePad, &launch, &tempo, &clock, &octave, &velocity, &channel, &play })
         addAndMakeVisible (component);
     open.setVisible (false);
@@ -542,6 +827,21 @@ NativeEditor::NativeEditor (PluginProcessor& processor) : controller (processor)
             controller.processor.renamePattern (controller.processor.selectedPattern(), patternName.getText());
             controller.refresh();
         }
+    };
+    sequenceModule.addAndMakeVisible (voicingButton);
+    voicingButton.setComponentID ("voiceLeading");
+    voicingButton.setTitle ("Voice leading");
+    voicingButton.onClick = [this]
+    {
+        juce::PopupMenu menu;
+        const juce::StringArray names { "Root position", "Smooth", "Ramp Up", "Ramp Down" };
+        for (int i = 0; i < names.size(); ++i)
+            menu.addItem (i + 1, names[i], true, static_cast<int> (controller.state["voiceLeading"]) == i);
+        menu.showMenuAsync (juce::PopupMenu::Options().withTargetComponent (&voicingButton),
+            [safe = juce::Component::SafePointer<NativeEditor> (this)] (int result)
+            {
+                if (safe != nullptr && result > 0) safe->controller.set ("voiceLeading", result - 1);
+            });
     };
     patternMenu.onClick = [this] { showPatternMenu(); };
     projectMenu.onClick = [this] { showProjectMenu(); };
@@ -583,8 +883,8 @@ NativeEditor::NativeEditor (PluginProcessor& processor) : controller (processor)
     swing.slider.setTooltip ("KSH swing: delays alternate groups by up to half a subdivision.");
     timingHumanize.slider.setTooltip ("KSH timing humanize: independent early/late offsets, up to 20% of the step duration.");
     velocityHumanize.slider.setTooltip ("KSH velocity humanize: random variation relative to each note's velocity.");
-    const juce::StringArray phonePages { "Perform", "Sequence", "Arp", "Groove" };
-    for (int i = 0; i < 4; ++i)
+    const juce::StringArray phonePages { "Perform", "Sequence", "Arp", "Groove", "Rhythm" };
+    for (int i = 0; i < 5; ++i)
     {
         auto& tab = phoneTabs[static_cast<size_t> (i)];
         tab.setButtonText (phonePages[i]);
@@ -603,6 +903,15 @@ NativeEditor::NativeEditor (PluginProcessor& processor) : controller (processor)
     performanceInfo.setColour (juce::Label::textColourId, foreground);
     performanceInfo.setJustificationType (juce::Justification::centredLeft);
     addChildComponent (performanceInfo);
+    arpModule.addChildComponent (rhythmPanel);
+    arpModule.addAndMakeVisible (rhythmButton);
+    rhythmButton.onClick = [this]
+    {
+        if (rhythmPopup != nullptr) return;
+        auto panel = std::make_unique<RhythmEditor> (controller);
+        rhythmPopup = panel.get();
+        juce::CallOutBox::launchAsynchronously (std::move (panel), getLocalArea (&rhythmButton, rhythmButton.getLocalBounds()), this);
+    };
     addKeyListener (this);
     controller.changed = [this] { sync(); };
     sync();
@@ -610,6 +919,12 @@ NativeEditor::NativeEditor (PluginProcessor& processor) : controller (processor)
 }
 NativeEditor::~NativeEditor()
 {
+    if (rhythmPopup != nullptr)
+        if (auto* callout = rhythmPopup->findParentComponentOfClass<juce::CallOutBox>())
+        {
+            callout->setVisible (false);
+            callout->exitModalState (0);
+        }
     stopTimer();
     controller.changed = nullptr;
     if (glossaryWindow != nullptr)
@@ -621,7 +936,7 @@ NativeEditor::~NativeEditor()
 void NativeEditor::bind (NumberControl& control, const juce::Identifier& key, bool arp)
 {
     numbers.push_back (&control);
-    control.slider.onDragStart = [this] { controller.processor.endEditGesture(); };
+    control.slider.onDragStart = [this] { controller.processor.beginEditGesture(); };
     control.slider.onDragEnd = [this] { controller.processor.endEditGesture(); };
     control.slider.onValueChange = [this, &control, key, arp]
     {
@@ -644,11 +959,21 @@ void NativeEditor::sync()
     const auto& state = controller.state;
     const auto& transport = controller.transport;
     const auto arp = state["arp"];
+    voicingButton.setButtonText (juce::StringArray { "Root position", "Smooth", "Ramp Up", "Ramp Down" }[static_cast<int> (state["voiceLeading"])]);
     const bool sequenceOn = static_cast<bool> (state["sequencerEnabled"]);
     const bool arpOn = static_cast<bool> (arp["enabled"]);
     const bool standalone = controller.processor.isStandalone();
     const bool host = ! standalone && static_cast<bool> (state["hostSync"]);
     const int revision = controller.refreshSerial;
+    const double previewTempo = host && static_cast<bool> (transport["hostAvailable"])
+        ? static_cast<double> (transport["tempo"]) : static_cast<double> (state["tempo"]);
+    const int heldNotes = static_cast<int> (transport["heldInputNotes"]);
+    if (! sequenceOn && arpOn && (lastRevision != revision || heldNotes != lastArpPreviewHeld || std::abs (previewTempo - lastArpPreviewTempo) > 1.0e-6))
+    {
+        arpVisualizer.update (controller.processor.getArpPreviewSettings(), previewTempo, heldNotes);
+        lastArpPreviewTempo = previewTempo;
+        lastArpPreviewHeld = heldNotes;
+    }
     if (lastRevision != revision)
     {
         lastRevision = revision;
@@ -702,7 +1027,6 @@ void NativeEditor::sync()
         pad.active = i == activeSlot;
         pad.queued = i == queuedSlot;
         pad.selected = i == selectedSlot;
-        pad.patternName = bankState["patterns"][i]["name"].toString();
         pad.repaint();
     }
     mutePad.setToggleState (selectedSlot < 0, juce::dontSendNotification);
@@ -722,15 +1046,20 @@ void NativeEditor::sync()
     clock.setEnabled (! standalone);
     for (auto* component : std::initializer_list<juce::Component*> { &style, &offset, &repeats, &rateMode, &rate, &freeRate, &gate, &swing, &swingSubdivision, &velocityHumanize, &timingHumanize, &steps, &distance, &retrigger, &hold, &velocityEnabled })
         component->setEnabled (arpOn);
+    distance.setEnabled (arpOn && static_cast<int> (arp["steps"]) > 0);
     interval.setEnabled (arpOn && static_cast<int> (arp["retrigger"]) == 2);
+    interval.refreshStepper();
     const bool envelopeOn = arpOn && static_cast<bool> (arp["velocityEnabled"]);
     target.setEnabled (envelopeOn);
     decay.setEnabled (envelopeOn);
     velocityRetrigger.setEnabled (envelopeOn);
     rate.setVisible (static_cast<bool> (arp["sync"]));
     freeRate.setVisible (! static_cast<bool> (arp["sync"]));
+    const bool entryStatus = controller.error.isNotEmpty() || controller.dirty();
+    message.setVisible (entryStatus && ! arpOnlyLayout);
+    summary.setVisible (! entryStatus && ! arpOnlyLayout);
     message.setColour (juce::Label::textColourId, controller.error.isNotEmpty() ? juce::Colour (0xffffa5aa) : muted);
-    message.setText (controller.error.isNotEmpty() ? controller.error : controller.dirty() ? "Unapplied changes" : "One chord. One bar. Fixed 4/4. Use @ for explicit durations, e.g. C7@2.", juce::dontSendNotification);
+    message.setText (controller.error.isNotEmpty() ? controller.error : controller.dirty() ? "Unapplied changes" : "Drag chord tones up/down to edit pitches. Apply regenerates the notes.", juce::dontSendNotification);
     auto transportText = juce::String ("Stopped");
     if (! sequenceOn)
         transportText = arpOn ? host && ! static_cast<bool> (transport["playing"]) ? "Waiting for host transport" : "Arpeggiating MIDI input" : "MIDI thru";
@@ -759,6 +1088,9 @@ void NativeEditor::sync()
             : (activeSlot < 0 ? juce::String ("Muted") : "P" + juce::String (activeSlot + 1)) + (static_cast<bool> (transport["playing"]) ? "  Playing" : "  Stopped"), juce::dontSendNotification);
         layoutPhone();
     }
+    if (arpOnlyLayout != (! sequenceOn && arpOn) && getWidth() > 0 && getHeight() > 0) resized();
+    rhythmPanel.refresh();
+    if (rhythmPopup != nullptr) rhythmPopup->refresh();
     timeline.repaint();
 }
 void NativeEditor::showGlossary()
@@ -851,6 +1183,7 @@ void NativeEditor::updateTimelineSize()
 
 void NativeEditor::resized()
 {
+    arpOnlyLayout = ! static_cast<bool> (controller.state["sequencerEnabled"]) && static_cast<bool> (controller.state["arp"]["enabled"]);
     const bool compact = getWidth() < 700 || (getHeight() <= 500 && getWidth() <= 1100);
     if (compact)
     {
@@ -901,71 +1234,94 @@ void NativeEditor::resized()
     const int columns = w >= 1000 ? 5 : w >= 700 ? 3 : w >= 500 ? 2 : 1;
     const int groupRows = (5 + columns - 1) / columns;
     const int arpHeight = 44 + groupRows * 188;
+    const bool arpOnly = ! static_cast<bool> (controller.state["sequencerEnabled"]) && static_cast<bool> (controller.state["arp"]["enabled"]);
+    arpOnlyLayout = arpOnly;
     const int minimumSequence = 224;
     const int minimumHeight = minimumSequence + 12 + arpHeight;
     const int contentHeight = juce::jmax (minimumHeight, viewport.getHeight());
     content.setSize (viewport.getWidth() - (contentHeight > viewport.getHeight() ? 14 : 0), contentHeight);
     const int cw = content.getWidth();
-    const int sequenceHeight = contentHeight - arpHeight - 12;
+    const int sequenceHeight = arpOnly ? 44 : contentHeight - arpHeight - 12;
+    const int expandedArpHeight = contentHeight - sequenceHeight - 12;
+    const int previewHeight = arpOnly ? expandedArpHeight - arpHeight : 0;
     sequenceModule.setBounds (0, 0, cw, sequenceHeight);
-    arpModule.setBounds (0, sequenceHeight + 12, cw, arpHeight);
+    arpModule.setBounds (0, sequenceHeight + 12, cw, expandedArpHeight);
+    arpVisualizer.setVisible (arpOnly);
+    arpVisualizer.setBounds (12, 44, cw - 24, juce::jmax (0, previewHeight - 10));
+    for (auto* component : std::initializer_list<juce::Component*> { &progression, &apply, &timelineViewport, &summary, &message, &patternName, &fit, &patternMenu, &glossary, &voicingButton })
+        if (arpOnly) component->setVisible (false);
     sequencer.setBounds (14, 8, 40, 28);
     auto moduleHeader = juce::Rectangle<int> (230, 7, juce::jmax (0, cw - 244), 30);
     patternMenu.setBounds (moduleHeader.removeFromRight (75)); moduleHeader.removeFromRight (6);
     fit.setBounds (moduleHeader.removeFromRight (42)); moduleHeader.removeFromRight (6);
     glossary.setBounds (moduleHeader.removeFromRight (64));
+    moduleHeader.removeFromRight (6);
+    voicingButton.setBounds (moduleHeader.removeFromRight (120));
     patternName.setBounds (moduleHeader);
-    patternName.setVisible (cw >= 700);
-    glossary.setVisible (cw >= 650);
+    patternName.setVisible (! arpOnly && cw >= 700);
+    glossary.setVisible (! arpOnly && cw >= 650);
     if (cw < 650)
     {
         patternMenu.setBounds (cw - 89, 7, 75, 30);
         fit.setBounds (cw - 137, 7, 42, 30);
     }
-    progression.setBounds (14, 47, cw - 108, 42);
-    apply.setBounds (cw - 86, 47, 72, 42);
-    message.setBounds (14, 92, cw - 28, 22);
-    timelineViewport.setBounds (14, 115, cw - 28, sequenceHeight - 144);
+    progression.setFont (juce::FontOptions (28.0f));
+    progression.setBorder (juce::BorderSize<int> (0, 16, 0, 16));
+    progression.setBounds (14, 47, cw - 128, 64);
+    apply.setBounds (cw - 102, 47, 88, 64);
+    timelineViewport.setBounds (14, 119, cw - 28, sequenceHeight - 148);
     summary.setBounds (14, sequenceHeight - 27, cw - 28, 22);
+    message.setBounds (summary.getBounds());
     arpeggiator.setBounds (14, 8, 40, 28);
     hold.setBounds (cw - 124, 8, 110, 28);
+    rhythmButton.setBounds (cw - 245, 8, 110, 28);
     for (size_t i = 0; i < groups.size(); ++i)
     {
         const int col = static_cast<int> (i) % columns;
         const int x = 10 + col * (cw - 20) / columns;
         const int right = 10 + (col + 1) * (cw - 20) / columns;
-        groups[i].setBounds (x, 44 + static_cast<int> (i) / columns * 188, right - x - 5, 184);
+        groups[i].setBounds (x, 44 + previewHeight + static_cast<int> (i) / columns * 188, right - x - 5, 184);
     }
     auto groupArea = [this] (size_t i) { return groups[i].getBounds().reduced (10, 0).withTrimmedTop (19); };
     auto a = groupArea (0);
     style.setBounds (a.removeFromTop (48)); a.removeFromTop (6);
-    offset.setBounds (a.removeFromTop (48)); a.removeFromTop (6);
-    repeats.setBounds (a.removeFromTop (48));
+    auto phrase = a.removeFromTop (48);
+    offset.setBounds (phrase.removeFromLeft (phrase.getWidth() / 2).withTrimmedRight (5));
+    repeats.setBounds (phrase); a.removeFromTop (6);
+    phrase = a.removeFromTop (48);
+    retrigger.setBounds (phrase.removeFromLeft (65)); phrase.removeFromLeft (6);
+    interval.setBounds (phrase);
     a = groupArea (1);
     auto timing = a.removeFromTop (48);
     rateMode.setBounds (timing.removeFromLeft (65)); timing.removeFromLeft (6);
     rate.setBounds (timing); freeRate.setBounds (timing);
     a.removeFromTop (6); gate.setBounds (a.removeFromTop (48));
-    a.removeFromTop (6); swing.setBounds (a.removeFromTop (48));
+    a.removeFromTop (6);
+    auto groove = a.removeFromTop (48);
+    swing.setBounds (groove.removeFromLeft (juce::jmax (90, groove.getWidth() - 65)).withTrimmedRight (5));
+    swingSubdivision.setBounds (groove);
     a = groupArea (2);
     steps.setBounds (a.removeFromTop (48)); a.removeFromTop (6);
     distance.setBounds (a.removeFromTop (48)); a.removeFromTop (6);
-    auto pitch = a.removeFromTop (48);
-    retrigger.setBounds (pitch.removeFromLeft (65)); pitch.removeFromLeft (6);
-    interval.setBounds (pitch);
+
+    pitchHint.setBounds (a);
     a = groupArea (3);
-    swingSubdivision.setBounds (a.removeFromTop (48)); a.removeFromTop (6);
+
     velocityHumanize.setBounds (a.removeFromTop (48)); a.removeFromTop (6);
-    timingHumanize.setBounds (a.removeFromTop (48));
+    timingHumanize.setBounds (a.removeFromTop (48)); a.removeFromTop (6);
+    humanizeHint.setBounds (a);
     a = groupArea (4);
     velocityEnabled.setBounds (a.removeFromTop (27)); a.removeFromTop (4);
     target.setBounds (a.removeFromTop (48)); a.removeFromTop (4);
     decay.setBounds (a.removeFromTop (48)); a.removeFromTop (6);
     velocityRetrigger.setBounds (a.removeFromTop (28));
     freeRate.slider.setSliderStyle (juce::Slider::IncDecButtons);
-    interval.slider.setSliderStyle (juce::Slider::IncDecButtons);
+    interval.slider.setSliderStyle (juce::Slider::LinearHorizontal);
     freeRate.slider.setTextBoxStyle (juce::Slider::TextBoxAbove, false, 76, 25);
-    interval.slider.setTextBoxStyle (juce::Slider::TextBoxAbove, false, 76, 25);
+    interval.slider.setTextBoxStyle (juce::Slider::TextBoxLeft, false, 90, 30);
+    offset.slider.setTextBoxStyle (juce::Slider::TextBoxRight, false, 42, 26);
+    repeats.slider.setTextBoxStyle (juce::Slider::TextBoxRight, false, 54, 26);
+    swing.slider.setTextBoxStyle (juce::Slider::TextBoxRight, false, 50, 26);
     updateTimelineSize();
 }
 }

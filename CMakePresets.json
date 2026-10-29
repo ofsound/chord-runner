@@ -7,7 +7,7 @@
       "generator": "Xcode",
       "binaryDir": "${sourceDir}/Builds-Xcode",
       "cacheVariables": {
-        "CHORD_RUNNER_COPY_PLUGINS": "OFF"
+        "CHORD_RUNNER_COPY_PLUGINS": "ON"
       }
     },
     {

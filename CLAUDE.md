@@ -16,7 +16,7 @@ Chord Runner by ofsound is a MIDI-only chord-pattern generator built with JUCE 9
 
 ```sh
 git submodule update --init --recursive
-cmake -B Builds -G Ninja -DCMAKE_BUILD_TYPE=Debug
+cmake -B Builds -G Ninja -DCMAKE_BUILD_TYPE=Debug -DCHORD_RUNNER_COPY_PLUGINS=ON
 cmake --build Builds --parallel 4
 ctest --test-dir Builds --output-on-failure
 ```
@@ -29,7 +29,7 @@ The editor is native JUCE C++ in `source/ui/`; there is no WebView, JavaScript b
 
 Shorthand is the primary input. `C - G - Am - F` is four bars. `C1/2 G1/2 | Am2` is three bars. Durations are **bars**, one by default, fixed 4/4. C4 = MIDI 60. C++ is the single parser and scheduling authority; the UI renders the exact notes/start beats returned by C++.
 
-Use `@` to disambiguate durations from quality numbers (`C7@2`). Slash chords/inversions are future work. Do not add separate JavaScript parsing or playback clocks. Invalid edits must preserve the last valid state.
+Use `@` to disambiguate durations from quality numbers (`C7@2`). Slash-bass notation remains future work. Automatic inversion selection is available through the per-pattern Smooth/Ramp Up/Ramp Down voice-leading modes. Do not add separate JavaScript parsing or playback clocks. Invalid edits must preserve the last valid state.
 
 ## Architecture and realtime safety
 

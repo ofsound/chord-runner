@@ -1,6 +1,7 @@
 #pragma once
 #include <juce_audio_processors/juce_audio_processors.h>
 #include "engine/TimelineEngine.h"
+#include "engine/OutputPreview.h"
 #include "platform/IOSProjectLibrary.h"
 
 class PluginProcessor : public juce::AudioProcessor
@@ -30,6 +31,8 @@ public:
     void getStateInformation (juce::MemoryBlock&) override;
     void setStateInformation (const void*, int) override;
 
+    std::vector<chordrunner::PreviewNote> getOutputPreview() const;
+    chordrunner::ArpeggiatorSettings getArpPreviewSettings() const; // Message thread only.
     juce::var getTimelineState() const;
     juce::Result setTimelineState (const juce::var&);
     juce::var getTransportState() const;
@@ -50,7 +53,9 @@ public:
     void newProject();
     bool canUndo() const { const juce::ScopedLock lock (stateLock); return ! undoStates.empty(); }
     bool canRedo() const { const juce::ScopedLock lock (stateLock); return ! redoStates.empty(); }
-    void endEditGesture() { const juce::ScopedLock lock (stateLock); lastTransaction.clear(); }
+    juce::Result editChordTone (int chord, int tone, int pitch, int expectedRevision);
+    void beginEditGesture() { const juce::ScopedLock lock (stateLock); lastTransaction.clear(); editGestureActive = true; }
+    void endEditGesture() { const juce::ScopedLock lock (stateLock); lastTransaction.clear(); editGestureActive = false; }
     void undo();
     void redo();
     void markDocumentClean();
@@ -88,6 +93,7 @@ private:
     juce::String projectName { "Untitled Project" }, projectAuthor, projectDescription, createdAt, modifiedAt;
     juce::File projectFile;
     juce::String cleanDocument, lastTransaction;
+    bool editGestureActive = false;
     double lastEditTime = 0.0;
     std::vector<juce::var> undoStates, redoStates;
     void publishBank();
@@ -96,6 +102,10 @@ private:
     chordrunner::Arpeggiator arpeggiator;
     juce::MidiBuffer outgoingMidi, bootstrapMidi, sequenceMidi, inputMidi, segmentMidi, appendMidi;
     std::array<bool, 16 * 128> passedNotes {};
+    std::array<bool, 16 * 128> inputKeysDown {}; // Audio-thread owned, no UI access.
+    int inputKeyCount = 0;
+    std::atomic<int> heldInputStatus { 0 };
+    void trackInputKeys (const juce::MidiBuffer&, int samples, bool clear);
     std::array<bool, 16> passedSustain {};
     bool previousSequencer = true, previousArp = false, bypassed = false;
     void releasePassedNotes (juce::MidiBuffer&);

@@ -10,11 +10,16 @@ struct ArpeggiatorSettings
     enum Style { up, down, upDown, downUp, converge, diverge, playOrder, chordTrigger, random, randomOther, randomOnce };
     bool enabled = false, sync = true, hold = false, velocityEnabled = false, velocityRetrigger = true;
     int style = up, steps = 0, distance = 12, offset = 0, retrigger = 1, repeats = 0, target = 64;
+    bool gateSequenceEnabled = false, tieSequenceEnabled = false;
+    int gateLength = 16, tieLength = 16, gateMask = 65535, tieMask = 0;
     int swingSubdivision = 1, velocityHumanize = 0, timingHumanize = 0;
     double rate = 0.25, freeMs = 100.0, gate = 100.0, swing = 0.0, interval = 4.0, decay = 1000.0;
     bool operator== (const ArpeggiatorSettings& other) const
     {
-        return swingSubdivision == other.swingSubdivision
+        return gateSequenceEnabled == other.gateSequenceEnabled && tieSequenceEnabled == other.tieSequenceEnabled
+            && gateLength == other.gateLength && tieLength == other.tieLength
+            && gateMask == other.gateMask && tieMask == other.tieMask
+            && swingSubdivision == other.swingSubdivision
             && velocityHumanize == other.velocityHumanize
             && timingHumanize == other.timingHumanize
             && enabled == other.enabled
@@ -49,7 +54,7 @@ public:
 
 private:
     struct Key { int note = 0, channel = 1, velocity = 100; bool down = false; };
-    struct Pending { Key key; int transpose = 0; double at = 0.0, duration = 0.0; };
+    struct Pending { Key key; int transpose = 0; double at = 0.0, duration = 0.0, nominal = 0.0; };
     struct Voice { int note = 0, channel = 1, source = 0; double off = 0.0; };
     juce::MidiBuffer sampleMidi;
     std::array<Key, capacity> keys {};
@@ -59,7 +64,8 @@ private:
     std::array<Pending, capacity * 8> pending {};
     int pendingCount = 0;
     int keyCount = 0, voiceCount = 0, orderCount = 0;
-    juce::uint64 step = 0;
+    juce::uint64 step = 0, rhythmStep = 0;
+    bool rhythmContinuation = false;
     juce::uint32 seed = 0x6d2b79f5u;
     double clock = 0.0, next = 0.0, nominalNext = 0.0, velocityStart = 0.0, expectedBeat = 0.0;
     juce::int64 retriggerBucket = -1;

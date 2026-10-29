@@ -1,4 +1,5 @@
 #include "PluginProcessor.h"
+#include <algorithm>
 
 namespace
 {
@@ -12,6 +13,7 @@ juce::var encodeTimeline (const chordrunner::Timeline& state, const juce::String
     object->setProperty ("channel", state.channel);
     object->setProperty ("velocity", state.velocity);
     object->setProperty ("octave", state.octave);
+    object->setProperty ("voiceLeading", state.voiceLeading);
     object->setProperty ("hostSync", state.hostSync);
     object->setProperty ("sequencerEnabled", state.sequencerEnabled);
     auto arp = std::make_unique<juce::DynamicObject>();
@@ -34,9 +36,30 @@ juce::var encodeTimeline (const chordrunner::Timeline& state, const juce::String
     arp->setProperty ("swingSubdivision", state.arp.swingSubdivision);
     arp->setProperty ("velocityHumanize", state.arp.velocityHumanize);
     arp->setProperty ("timingHumanize", state.arp.timingHumanize);
+    arp->setProperty ("gateSequenceEnabled", state.arp.gateSequenceEnabled);
+    arp->setProperty ("tieSequenceEnabled", state.arp.tieSequenceEnabled);
+    arp->setProperty ("gateLength", state.arp.gateLength);
+    arp->setProperty ("tieLength", state.arp.tieLength);
+    arp->setProperty ("gateMask", state.arp.gateMask);
+    arp->setProperty ("tieMask", state.arp.tieMask);
     arp->setProperty ("interval", state.arp.interval);
     arp->setProperty ("decay", state.arp.decay);
     object->setProperty ("arp", juce::var (arp.release()));
+    bool edited = false;
+    juce::Array<juce::var> offsets;
+    for (int c = 0; c < state.count; ++c)
+    {
+        juce::Array<juce::var> row;
+        const auto& chord = state.chords[static_cast<size_t> (c)];
+        for (int n = 0; n < chord.noteCount; ++n)
+        {
+            const int offset = chord.toneOffsets[static_cast<size_t> (n)];
+            edited = edited || offset != 0;
+            row.add (offset);
+        }
+        offsets.add (row);
+    }
+    if (edited) object->setProperty ("toneOffsets", offsets);
     object->setProperty ("totalBeats", state.length());
     juce::Array<juce::var> chords;
     double start = 0.0;
@@ -44,6 +67,7 @@ juce::var encodeTimeline (const chordrunner::Timeline& state, const juce::String
     {
         const auto& chord = state.chords[static_cast<size_t> (i)];
         auto item = std::make_unique<juce::DynamicObject>();
+        item->setProperty ("edited", std::any_of (chord.toneOffsets.begin(), chord.toneOffsets.end(), [] (int offset) { return offset != 0; }));
         item->setProperty ("label", juce::String::fromUTF8 (chord.label.data()));
         item->setProperty ("beats", chord.beats);
         item->setProperty ("startBeat", start);
@@ -84,6 +108,11 @@ juce::Result decodeTimeline (const juce::var& value, chordrunner::Timeline& next
     next.channel = static_cast<int> (value["channel"]);
     next.velocity = static_cast<int> (value["velocity"]);
     next.octave = static_cast<int> (value["octave"]);
+    if (value.hasProperty ("voiceLeading"))
+    {
+        if (! numberInRange (value["voiceLeading"], 0, 3)) return juce::Result::fail ("Invalid voice-leading mode.");
+        next.voiceLeading = static_cast<int> (value["voiceLeading"]);
+    }
     next.hostSync = static_cast<bool> (value["hostSync"]);
     if (static_cast<int> (value["schema"]) >= 2)
     {
@@ -146,12 +175,55 @@ juce::Result decodeTimeline (const juce::var& value, chordrunner::Timeline& next
         next.arp.swing *= 2.0;
         next.arp.swingSubdivision = 0;
     }
+    const auto lanes = value["arp"];
+    if (lanes.hasProperty ("gateSequenceEnabled") || lanes.hasProperty ("tieSequenceEnabled")
+        || lanes.hasProperty ("gateLength") || lanes.hasProperty ("tieLength")
+        || lanes.hasProperty ("gateMask") || lanes.hasProperty ("tieMask"))
+    {
+        if (! lanes["gateSequenceEnabled"].isBool() || ! lanes["tieSequenceEnabled"].isBool()
+            || ! numberInRange (lanes["gateLength"], 1, 16) || ! numberInRange (lanes["tieLength"], 1, 16)
+            || ! numberInRange (lanes["gateMask"], 0, 65535) || ! numberInRange (lanes["tieMask"], 0, 65535))
+            return juce::Result::fail ("Invalid gate or tie sequence.");
+        next.arp.gateSequenceEnabled = static_cast<bool> (lanes["gateSequenceEnabled"]);
+        next.arp.tieSequenceEnabled = static_cast<bool> (lanes["tieSequenceEnabled"]);
+        next.arp.gateLength = static_cast<int> (lanes["gateLength"]);
+        next.arp.tieLength = static_cast<int> (lanes["tieLength"]);
+        next.arp.gateMask = static_cast<int> (lanes["gateMask"]);
+        next.arp.tieMask = static_cast<int> (lanes["tieMask"]);
+    }
     text = value["progression"].toString();
     const auto result = static_cast<int> (value["schema"]) < 3
         ? chordrunner::migrateLegacyProgression (text, next, text)
         : chordrunner::parseProgression (text, next);
     if (result.failed())
         return result;
+    if (value.hasProperty ("toneOffsets"))
+    {
+        const auto* offsets = value["toneOffsets"].getArray();
+        if (offsets == nullptr || offsets->size() != next.count)
+            return juce::Result::fail ("Invalid chord-tone edits.");
+        for (int c = 0; c < next.count; ++c)
+        {
+            auto& chord = next.chords[static_cast<size_t> (c)];
+            const auto* row = offsets->getReference (c).getArray();
+            if (row == nullptr || row->size() != chord.noteCount)
+                return juce::Result::fail ("Invalid chord-tone edits.");
+            for (int n = 0; n < chord.noteCount; ++n)
+            {
+                if (! numberInRange (row->getReference (n), -127, 127))
+                    return juce::Result::fail ("Invalid chord-tone pitch.");
+                const int offset = static_cast<int> (row->getReference (n));
+                const int pitch = chord.notes[static_cast<size_t> (n)] + offset;
+                if (pitch < 0 || pitch > 127)
+                    return juce::Result::fail ("Chord tones must stay within MIDI 0-127.");
+                for (int previous = 0; previous < n; ++previous)
+                    if (chord.notes[static_cast<size_t> (previous)] == pitch)
+                        return juce::Result::fail ("Each chord tone needs a distinct pitch.");
+                chord.toneOffsets[static_cast<size_t> (n)] = offset;
+                chord.notes[static_cast<size_t> (n)] = pitch;
+            }
+        }
+    }
     return juce::Result::ok();
 }
 }
@@ -191,8 +263,11 @@ juce::Result PluginProcessor::setTimelineState (const juce::var& value)
             return juce::Result::fail ("The selected pattern changed while editing. Try the edit again.");
         auto& pattern = patterns[static_cast<size_t> (juce::jmax (0, target))];
         const auto& state = pattern.timeline;
-        const bool changed = text != pattern.progression || next.octave != state.octave
-            || next.channel != state.channel || next.velocity != state.velocity
+        bool tonesChanged = next.count != state.count;
+        for (int c = 0; c < juce::jmin (next.count, state.count); ++c)
+            tonesChanged = tonesChanged || next.chords[static_cast<size_t> (c)].notes != state.chords[static_cast<size_t> (c)].notes;
+        const bool changed = tonesChanged || text != pattern.progression || next.octave != state.octave
+            || next.channel != state.channel || next.voiceLeading != state.voiceLeading || next.velocity != state.velocity
             || next.sequencerEnabled != state.sequencerEnabled || next.arp != state.arp;
         next.noteRevision = state.noteRevision + (changed ? 1u : 0u);
         // Tempo and clock belong to the project, and never restart held notes.
@@ -305,6 +380,7 @@ juce::Result PluginProcessor::setProjectState (const juce::var& value, bool stop
         projectFile = juce::File {};
         undoStates.clear();
         redoStates.clear();
+        editGestureActive = false;
         lastTransaction.clear();
         markDocumentClean();
     }
@@ -318,7 +394,7 @@ void PluginProcessor::rememberEdit (const juce::var& before, const juce::String&
     if (juce::JSON::toString (before, true) == juce::JSON::toString (getProjectState(), true))
         return;
     const auto now = juce::Time::getMillisecondCounterHiRes();
-    if (transaction.isEmpty() || transaction != lastTransaction || now - lastEditTime > 450.0 || undoStates.empty())
+    if (transaction.isEmpty() || transaction != lastTransaction || (now - lastEditTime > 450.0 && ! editGestureActive) || undoStates.empty())
     {
         if (undoStates.size() == 128)
             undoStates.erase (undoStates.begin());
@@ -556,4 +632,52 @@ void PluginProcessor::saveStandaloneSettings (juce::PropertySet& properties) con
    #if JUCE_IOS
     iosLibrary->saveAccess (properties);
    #endif
+}
+
+std::vector<chordrunner::PreviewNote> PluginProcessor::getOutputPreview() const
+{
+    chordrunner::Timeline timeline;
+    {
+        const juce::ScopedLock lock (stateLock);
+        const int selection = selectedStatus.load();
+        if (selection < 0) return {};
+        timeline = patterns[static_cast<size_t> (selection)].timeline;
+    }
+    return chordrunner::renderOutputPreview (timeline);
+}
+
+juce::Result PluginProcessor::editChordTone (int chordIndex, int toneIndex, int pitch, int expectedRevision)
+{
+    const juce::ScopedLock lock (stateLock);
+    const int selection = selectedStatus.load();
+    if (revision.load() != expectedRevision || selection < 0)
+        return juce::Result::fail ("The pattern changed during the note drag.");
+    auto& timeline = patterns[static_cast<size_t> (selection)].timeline;
+    if (chordIndex < 0 || chordIndex >= timeline.count || pitch < 0 || pitch > 127)
+        return juce::Result::fail ("Invalid chord-tone pitch.");
+    auto& chord = timeline.chords[static_cast<size_t> (chordIndex)];
+    if (toneIndex < 0 || toneIndex >= chord.noteCount) return juce::Result::fail ("Invalid chord tone.");
+    for (int n = 0; n < chord.noteCount; ++n)
+        if (n != toneIndex && chord.notes[static_cast<size_t> (n)] == pitch)
+            return juce::Result::fail ("Each chord tone needs a distinct pitch.");
+    if (chord.notes[static_cast<size_t> (toneIndex)] == pitch) return juce::Result::ok();
+    const auto before = getProjectState();
+    if (selectedStatus.load() != selection || revision.load() != expectedRevision)
+        return juce::Result::fail ("The pattern changed during the note drag.");
+    // Edit the already compiled voicing. Dragging must not rerun progression
+    // parsing or the whole voice-leading search on every pointer movement.
+    chord.toneOffsets[static_cast<size_t> (toneIndex)] += pitch - chord.notes[static_cast<size_t> (toneIndex)];
+    chord.notes[static_cast<size_t> (toneIndex)] = pitch;
+    ++timeline.noteRevision;
+    publishBank();
+    rememberEdit (before, "chord-tone drag");
+    updateHostDisplay (ChangeDetails().withNonParameterStateChanged (true));
+    return juce::Result::ok();
+}
+
+chordrunner::ArpeggiatorSettings PluginProcessor::getArpPreviewSettings() const
+{
+    const juce::ScopedLock lock (stateLock);
+    const int selection = selectedStatus.load();
+    return patterns[static_cast<size_t> (juce::jmax (0, selection))].timeline.arp;
 }

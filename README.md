@@ -10,7 +10,7 @@ Requires Xcode Command Line Tools, CMake 3.25+, and Ninja.
 
 ```sh
 git submodule update --init --recursive
-cmake -B Builds -G Ninja -DCMAKE_BUILD_TYPE=Debug
+cmake -B Builds -G Ninja -DCMAKE_BUILD_TYPE=Debug -DCHORD_RUNNER_COPY_PLUGINS=ON
 cmake --build Builds --parallel 4
 ctest --test-dir Builds --output-on-failure
 open "Builds/ChordRunner_artefacts/Debug/Standalone/Chord Runner.app"
@@ -38,10 +38,10 @@ Local builds target the current architecture. Add `-DCMAKE_OSX_ARCHITECTURES="ar
 - **77 chord types**, including major/minor/diminished/augmented triads, suspensions, added tones, sixths and six-nine chords, all four seventh/ninth/eleventh/thirteenth families, half-diminished extensions, altered dominants, and major/minor color chords. See the [complete suffix and alias reference](docs/chords.md).
 - Open **Chords** in the Sequence module or **Chord glossary** in its Pattern menu. Search by suffix, name, alias or formula; filter by family; choose an example root; and add a chord to the draft without interrupting playback. Select a row to see its aliases, then Add to draft or double-click. The formulas show the exact generated voicing. The parser and glossary use the same `assets/chords.json` catalog.
 - Examples: `Dm9 - G13b9 - Cmaj9`, `Fm9 - Bb13 - Ebmaj9 - Abmaj7#11`, or `Dm7b5 - G7(b9,#11) - Cm(maj9)`. Suffixes are case-sensitive; `m7` is minor and `M7` is major. Aliases include `Δ7`, `ø7`, `°7`, `+7`, and parenthesized alterations explicitly listed in the glossary.
-- Qualities take precedence over numeric durations: `C6`, `C9`, `C11` and `C13` are chords lasting one bar. Use `@` to make a duration explicit: `C9@2` holds a ninth chord for two bars; `C@9` holds a major triad for nine bars. Existing unambiguous forms such as `Am2` and `C1/2` still work. Write `C6add9` or `C69` for a six-nine chord; `C6/9` remains a fractional bar duration.
+- Qualities take precedence over numeric durations: `C6`, `C9`, `C11` and `C13` are chords lasting one bar. Use `@`, `x`, or `X` to make a duration explicit (`C7@2`, `C7x2`, and `C7X2` are equivalent): `C9@2` holds a ninth chord for two bars; `C@9` holds a major triad for nine bars. Existing unambiguous forms such as `Am2` and `C1/2` still work. Write `C6add9` or `C69` for a six-nine chord; `C6/9` remains a fractional bar duration.
 - Extensions include every degree shown in the glossary, in root position; full 11ths and 13ths can sound dense. Added-tone chords omit the seventh. `7alt` uses the specific seven-note altered-dominant formula listed in the glossary.
 - Durations support fractions and decimals, from 1/16 to 16 bars. Up to 64 chords and 4096 input characters.
-- Notes use scientific pitch notation: **C4 = MIDI 60**. The octave control chooses each chord's root octave. Chords are in root position; slash chords and inversions are deliberately rejected for now.
+- Notes use scientific pitch notation: **C4 = MIDI 60**. The octave control chooses each chord's root octave. Root position is the default; the Sequence module also offers Smooth, Ramp Up and Ramp Down automatic voicings. Slash-bass notation remains unsupported.
 - Invalid text reports an error and leaves the last valid pattern playing.
 
 ## Transport and routing
@@ -71,7 +71,7 @@ Controls follow [Ableton Live’s Arpeggiator reference](https://www.ableton.com
 
 - **Style:** Up, Down, Up & Down, Down & Up, Converge, Diverge, Play Order, Chord Trigger, Random, Random Other and Random Once. Up & Down / Down & Up do not repeat end notes. Random Other draws without replacement each cycle; Random Once repeats its shuffled order until the input notes change.
 - **Rate:** Sync uses quarter-note beat divisions (including dotted and triplet choices), or Free uses 10–2000 ms. Both use the native audio clock.
-- **Gate:** 1–200% of the unswung rate; values above 100% overlap different pitches. Retriggering the same pitch releases its previous voice first.
+- **Gate:** 1–200% of the unswung rate; single-note styles always release the preceding note before a new attack, including with long gates, swing and humanize. Values above 100% can extend a final note into an otherwise empty interval. Chord Trigger remains the explicit polyphonic style.
 - **Swing:** KSH’s 0–100% amount with **1×, 2×, 4×** subdivision groups (default 2×). Alternate groups are delayed by `subdivision × 0.5 × amount/100` steps. Delayed hits can cross later steps without blocking their playback.
 - **Velocity humanize:** 0–100%, uniformly varies each hit by up to that percentage of its velocity, clamped to 1–127. **Timing humanize:** 0–100%, uniformly shifts each hit early or late by up to 20% of one step, around its swung position. Both use KSH’s formulas. Fixed pending storage preserves negative offsets and delays across callback boundaries.
 - **Hold:** releasing keys keeps the pattern. Play a new chord after releasing all keys to replace it. While keys remain pressed, add notes or play an existing note again to remove it. Sustain pedal is consumed by the arp and retains released keys until pedal up.
@@ -102,7 +102,7 @@ The design uses restrained gradients, clear module boundaries and visible launch
 
 The JUCE editor lives in `source/ui/`. Controls call the same validated processor state API used by project/session restore; the engine remains the only parser and playback clock. Transport is polled on the message thread at 25 Hz, and the full state is fetched only after its revision changes.
 
-Drag sliders, type in their value boxes, or double-click to reset. Slider edits apply live. A continuous drag or scroll burst is one undo step; separate drags remain separate steps. Sync/Free controls switch rate units; velocity-envelope and beat-retrigger controls enable their dependent values. The timeline draws the exact notes and beats returned by the processor.
+Drag sliders, type in their value boxes, or double-click to reset. Slider edits apply live. A continuous drag or scroll burst is one undo step; separate drags remain separate steps. Sync/Free controls switch rate units; velocity-envelope and beat-retrigger controls enable their dependent values. The timeline draws the source chord bands and overlays the arp output as amber MIDI notes, including gate lengths, transposition, swing and humanize. The cached visual audition runs the production C++ schedulers outside the audio callback at a 4 kHz preview rate, with a maximum of 16 bars / 8192 notes. Random and humanized phrases illustrate one possible take. Input-only arpeggiation has no offline phrase to preview.
 
 After editing source or build files, run `cmake --build Builds --parallel 4` and `ctest --test-dir Builds --output-on-failure`. Build all formats and reload plugin instances in the DAW after rebuilding. Native editor tests exercise control-to-engine mappings, invalid drafts, transport, state restore, glossary filtering, and project round trips.
 
@@ -142,4 +142,26 @@ cmake --build --preset ios-simulator
 
 For a physical device, choose your development team in Signing & Capabilities for **both** Standalone and AUv3, select the connected device, and Run. To keep signing configuration through regeneration, configure with `-DCMAKE_XCODE_ATTRIBUTE_DEVELOPMENT_TEAM=YOUR_TEAM_ID -DCMAKE_XCODE_ATTRIBUTE_CODE_SIGN_STYLE=Automatic`. Generated projects live in ignored build folders; CMake is the source of truth.
 
-iPhone uses four native pages with no scrolling: **Perform**, **Sequence**, **Arp**, and **Groove**. Perform exposes all 16 pads, mute, tempo, clock and launch timing; Sequence contains shorthand, voicing and the fitted timeline; Arp contains order, rate and pitch controls; Groove contains swing, humanize and the velocity envelope. Transport stays visible. Landscape moves page navigation into a single toolbar and lays out controls in columns. Page selection and drafts survive rotation. iPad fits both modules at once, including the 1024×724 safe viewport; small host windows use the same compact pages. Standalone publishes **Chord Runner Output** through virtual MIDI on iOS, with background audio enabled; the AUv3 sends MIDI to its host. The app and AUv3 are simulator-buildable; physical-device MIDI routing, host integration and software-keyboard behavior still need device testing.
+iPhone uses five native pages with no scrolling: **Perform**, **Sequence**, **Arp**, **Groove**, and **Rhythm**. Perform exposes all 16 pads, mute, tempo, clock and launch timing; Sequence contains shorthand, voicing and the fitted timeline; Arp contains order, rate and pitch controls; Groove contains swing, humanize and the velocity envelope; Rhythm contains the gate and tie lanes. Transport stays visible. Landscape moves page navigation into a single toolbar and lays out controls in columns. Page selection and drafts survive rotation. iPad fits both modules at once, including the 1024×724 safe viewport; small host windows use the same compact pages. Standalone publishes **Chord Runner Output** through virtual MIDI on iOS, with background audio enabled; the AUv3 sends MIDI to its host. The app and AUv3 are simulator-buildable; physical-device MIDI routing, host integration and software-keyboard behavior still need device testing.
+
+## Gate and tie rhythm lanes
+
+Open **Gate / Tie** in the desktop arp header or **Rhythm** on iPhone. Each lane has its own power switch, 1–16-step cycle and cell mask. Click cells to toggle them; drag the numbered end handle horizontally to resize the cycle (arrow keys also adjust it). Shortening a cycle preserves its hidden cells. Small landscape phones offer Gate/Tie subpages without scrolling.
+
+Each cell advances on the arp base rate, in Sync or Free mode. Gate-off cells create rests while pitch order continues. An enabled tie cell continues the preceding held note/chord without a new attack, overriding a short gate so the original note does not stop between steps. Rests break ties; a tie after a rest starts a fresh note. The first step starts a note even if its tie cell is enabled. Entirely tied cycles sustain until a release/stop/reset; finite repeat counts still release. Cycles continue across note-triggered chord changes, while source-note replacement releases the previous chord safely. Transport stop resets both cycles.
+
+Both lanes are saved per pattern, copied and undone together with the arp, validated on project import, and included in the amber output preview. Older projects default to bypassed lanes.
+
+## Voice leading
+
+The Sequence header’s voicing menu offers Root position, **Smooth**, **Ramp Up** and **Ramp Down**. Smooth selects inversions across the whole progression to reduce motion between neighboring voices. The ramps balance that movement against a pitch-center target rising/falling by approximately one octave from the first chord to the last. Short local deviations may occur to keep chord transitions musical. The selected octave anchors the first chord. Smooth also considers the return to the first chord. The ramps deliberately omit that return transition from their optimization: each loop restarts at the first voicing, preserving the intended rise or fall.
+
+The native parser resolves voicings before publishing the timeline. Chord types, pitch classes, note counts and durations remain unchanged; notes stay within MIDI 0–127. The chord bands, held MIDI and arp input all use those same resolved notes. Mode selection is stored per pattern and participates in copy/recall/undo. Older sessions default to Root position.
+
+## Editing printed chord tones
+
+After Apply, drag a source chord band vertically in the piano roll to move that individual tone in semitones. Hover highlights the tone and shows its pitch; the grid scale stays fixed during a drag. Shift-drag slows the adjustment. Each drag is one undo transaction; Escape cancels it. Duplicate pitches within a chord and pitches outside MIDI 0–127 are rejected. Edited chord labels gain an asterisk.
+
+Edits change held MIDI and the arp input/amber phrase preview. They survive arp/tempo edits, pattern copying, project recall and host sessions. Apply regenerates the printed chords from shorthand; changing the octave or voice-leading mode also generates fresh voicings. Undo restores manual edits after regeneration. The shorthand retains its original chord symbols.
+
+Single-note arp output is monophonic across MIDI channels. If swing places several steps at the same sample, only the newest nominal step attacks. Beat retrigger owns its downbeat: timing humanize cannot pretrigger that same downbeat in the preceding interval and then generate it again at the reset. The amber preview uses the same scheduling and removes zero-duration artifacts.

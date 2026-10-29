@@ -221,6 +221,17 @@ TEST_CASE ("Render performance editor at desktop and iPad sizes", "[.visual]")
     pattern (processor, 0, "Dm9@1/2 G13b9@1/2 Cmaj9@2", true);
     processor.renamePattern (0, "Opening");
     processor.setProjectMetadata ("Night drive", "ofsound", "");
+    auto demo = processor.getTimelineState();
+    demo.getDynamicObject()->setProperty ("voiceLeading", 2);
+    auto* demoArp = demo["arp"].getDynamicObject();
+    demoArp->setProperty ("gateSequenceEnabled", true);
+    demoArp->setProperty ("gateLength", 10);
+    demoArp->setProperty ("gateMask", 975);
+    demoArp->setProperty ("tieSequenceEnabled", true);
+    demoArp->setProperty ("tieLength", 8);
+    demoArp->setProperty ("tieMask", 42);
+    REQUIRE (processor.setTimelineState (demo).wasOk());
+    REQUIRE (processor.editChordTone (0, 0, 63, static_cast<int> (processor.getTimelineState()["revision"])).wasOk());
     chordrunner::ui::NativeEditor editor (processor);
     const auto folder = juce::File ("/private/tmp/chord-runner-preview");
     REQUIRE (folder.createDirectory());
@@ -228,7 +239,7 @@ TEST_CASE ("Render performance editor at desktop and iPad sizes", "[.visual]")
     {
         editor.setSize (size.x, size.y);
         const bool phone = size.x < 700 || size.y <= 500;
-        for (int page = 0; page < (phone ? 4 : 1); ++page)
+        for (int page = 0; page < (phone ? 5 : 1); ++page)
         {
             if (phone)
                 for (int i = 0; i < editor.getNumChildComponents(); ++i)
@@ -288,6 +299,7 @@ TEST_CASE ("All KSH swing subdivisions follow the exact delayed-group formula", 
             if (sample < 24000) expected.push_back (sample);
         }
         std::sort (expected.begin(), expected.end());
+        expected.erase (std::unique (expected.begin(), expected.end()), expected.end());
         CHECK (onsets == expected);
         CHECK (groovePerformance (17, settings) == actual);
         CHECK (groovePerformance (4096, settings) == actual);
@@ -341,4 +353,91 @@ TEST_CASE ("Standalone restores its Save destination and unsaved document status
     CHECK (restored.getProjectFile() == path);
     CHECK (restored.isDocumentModified());
     CHECK (restored.getTimelineState()["progression"].toString() == "Am7 Dm9");
+}
+
+TEST_CASE ("Output preview renders actual arp pitches and gates over source chords", "[preview]")
+{
+    chordrunner::Timeline timeline;
+    REQUIRE (chordrunner::parseProgression ("C", timeline).wasOk());
+    timeline.arp.enabled = true;
+    timeline.arp.gate = 50;
+    const auto phrase = chordrunner::renderOutputPreview (timeline);
+    REQUIRE (phrase.size() == 16);
+    CHECK (phrase[0].note == 60);
+    CHECK (phrase[1].note == 64);
+    CHECK (phrase[2].note == 67);
+    CHECK (phrase[1].start == Catch::Approx (0.25));
+    CHECK (phrase[0].end == Catch::Approx (0.125));
+    timeline.arp.enabled = false;
+    CHECK (chordrunner::renderOutputPreview (timeline).empty());
+}
+
+TEST_CASE ("Gate rests and tie chains advance at arp rate without retriggering held notes", "[rhythm]")
+{
+    chordrunner::ArpeggiatorSettings settings;
+    settings.sync = false; settings.freeMs = 10; settings.gate = 50;
+    settings.gateSequenceEnabled = true; settings.gateLength = 4; settings.gateMask = 5;
+    auto events = groovePerformance (512, settings, 2400);
+    std::vector<int> onsets;
+    for (const auto hit : events) if (hit.on) onsets.push_back (hit.sample);
+    CHECK (onsets == std::vector<int> { 0, 960, 1920 });
+    settings.gateSequenceEnabled = false;
+    settings.tieSequenceEnabled = true; settings.tieLength = 4; settings.tieMask = 6;
+    events = groovePerformance (512, settings, 2400);
+    REQUIRE (events.size() >= 4);
+    CHECK (events[0].on); CHECK (events[0].sample == 0);
+    CHECK_FALSE (events[1].on); CHECK (events[1].sample == 1200);
+    CHECK (events[2].on); CHECK (events[2].sample == 1440);
+    CHECK (groovePerformance (17, settings, 2400) == events);
+    CHECK (groovePerformance (1, settings, 2400) == events);
+    settings.tieMask = 65535;
+    events = groovePerformance (512, settings, 2400);
+    REQUIRE (events.size() == 1);
+    CHECK (events[0].on);
+}
+
+TEST_CASE ("Rhythm lanes recall with undo and reject malformed cycles atomically", "[rhythm][state]")
+{
+    PluginProcessor processor;
+    auto state = processor.getTimelineState();
+    state["arp"].getDynamicObject()->setProperty ("gateLength", 10);
+    state["arp"].getDynamicObject()->setProperty ("gateMask", 975);
+    state["arp"].getDynamicObject()->setProperty ("tieLength", 8);
+    state["arp"].getDynamicObject()->setProperty ("tieMask", 42);
+    REQUIRE (processor.editTimeline (state).wasOk());
+    juce::MemoryBlock data; processor.getStateInformation (data);
+    PluginProcessor restored;
+    restored.setStateInformation (data.getData(), static_cast<int> (data.getSize()));
+    CHECK (static_cast<int> (restored.getTimelineState()["arp"]["gateLength"]) == 10);
+    CHECK (static_cast<int> (restored.getTimelineState()["arp"]["tieMask"]) == 42);
+    state["arp"].getDynamicObject()->setProperty ("gateLength", 0);
+    CHECK (processor.editTimeline (state).failed());
+    processor.undo();
+    CHECK (static_cast<int> (processor.getTimelineState()["arp"]["gateLength"]) == 16);
+    processor.redo();
+    CHECK (static_cast<int> (processor.getTimelineState()["arp"]["gateLength"]) == 10);
+}
+
+TEST_CASE ("Fully tied finite phrases stop and panic releases an indefinite tie", "[rhythm][midi]")
+{
+    chordrunner::ArpeggiatorSettings settings;
+    settings.sync = false; settings.freeMs = 10;
+    settings.tieSequenceEnabled = true; settings.tieMask = 65535;
+    settings.repeats = 1;
+    const auto finite = groovePerformance (512, settings, 2400);
+    REQUIRE (finite.size() == 2);
+    CHECK (finite[0].on); CHECK_FALSE (finite[1].on);
+    CHECK (finite[1].sample == 480);
+    settings.steps = 8; settings.distance = 0; settings.repeats = 64;
+    const auto longPhrase = groovePerformance (512, settings, 277000);
+    REQUIRE (longPhrase.size() == 2);
+    CHECK (longPhrase[1].sample == 276480);
+    settings.steps = 0; settings.repeats = 0;
+    chordrunner::Arpeggiator arp;
+    juce::MidiBuffer input, output;
+    input.addEvent (juce::MidiMessage::noteOn (1, 60, static_cast<juce::uint8> (100)), 0);
+    arp.render (settings, input, output, 0, 120, 48000, 2400, true, false);
+    output.clear(); arp.stop (output);
+    REQUIRE (hits (output).size() == 1);
+    CHECK_FALSE (hits (output)[0].on);
 }
