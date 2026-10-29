@@ -1,5 +1,6 @@
 #pragma once
 #include "../engine/OutputPreview.h"
+#include "UiPalette.h"
 #include <juce_gui_basics/juce_gui_basics.h>
 #include <melatonin_blur/melatonin_blur.h>
 
@@ -12,6 +13,7 @@ namespace chordrunner::ui
     public:
         ArpVisualizer();
         void update (const ArpeggiatorSettings&, double tempo, int heldNotes = 0);
+        void showOutputPulse (juce::uint64 serial, juce::uint64 step, int velocity, double ageMs, juce::uint64 rhythmStep);
         void resized() override;
         void paint (juce::Graphics&) override;
         void mouseMove (const juce::MouseEvent&) override;
@@ -23,11 +25,19 @@ namespace chordrunner::ui
         int inputRanks() const { return rankCount; }
 
     private:
+        juce::uint64 pulseSerial = 0, pulseOrdinal = 0, pulseRhythmOrdinal = 0;
+        double pulseStarted = -1000;
+        float pulse = 0;
         ArpeggiatorSettings settings;
         double tempo = 120, beats = 1, naturalBeats = 1, stepBeats = 0.25;
         int stepCount = 4, hovered = -1, low = 48, high = 57;
         int heldCount = 0, rankCount = 4, referenceBase = 48, rankSpacing = 3;
-        melatonin::DropShadow noteGlow { juce::Colour (0xff83dabb).withAlpha (0.25f), 8 };
+        std::array<melatonin::DropShadow, 4> noteGlows {
+            melatonin::DropShadow { accentYellow.withAlpha (0.015f), 4 },
+            melatonin::DropShadow { accentYellow.withAlpha (0.06f), 6 },
+            melatonin::DropShadow { accentYellow.withAlpha (0.13f), 7 },
+            melatonin::DropShadow { accentYellow.withAlpha (0.24f), 8 }
+        };
         juce::Label inspection;
         std::vector<PreviewNote> notes;
         std::vector<bool> reachesWindowEdge;

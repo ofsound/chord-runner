@@ -65,9 +65,24 @@ class ModuleCard final : public juce::Component
 public:
     explicit ModuleCard (juce::String name) : title (std::move (name)) {}
     void paint (juce::Graphics&) override;
+    void mouseDoubleClick (const juce::MouseEvent& event) override
+    {
+        if (event.y < 44 && onHeaderDoubleClick) onHeaderDoubleClick();
+    }
+    std::function<void()> onHeaderDoubleClick;
     void setTitleText (juce::String value) { title = std::move (value); repaint(); }
 private:
     juce::String title;
+};
+
+class ModulePower final : public juce::TextButton
+{
+public:
+    explicit ModulePower (const juce::String& name) : juce::TextButton (name) { setTooltip (name); }
+    void paintButton (juce::Graphics&, bool, bool) override;
+private:
+    melatonin::DropShadow glow { juce::Colour (0xff83dabb).withAlpha (0.55f), 6 };
+    melatonin::InnerShadow recess { juce::Colours::black.withAlpha (0.6f), 3, { 0, 1 } };
 };
 
 class PerformanceLook final : public juce::LookAndFeel_V4
@@ -130,8 +145,7 @@ private:
     juce::Component content;
     std::array<juce::TextButton, 5> phoneTabs;
     RhythmEditor rhythmPanel { controller };
-    juce::TextButton rhythmButton { "Gate / Tie" }, phonePreview { "Show preview" };
-    juce::Component::SafePointer<RhythmEditor> rhythmPopup;
+    juce::TextButton phonePreview { "Show preview" };
     juce::Label performanceInfo, pitchHint, humanizeHint;
     int phonePage = 0;
     bool phoneLayout = false;
@@ -143,7 +157,9 @@ private:
     bool arpOnlyLayout = false;
     double lastArpPreviewTempo = 0;
     int lastArpPreviewHeld = -1;
-    ModuleCard sequenceModule { "SEQUENCE" }, arpModule { "ARPEGGIATOR" };
+    int layoutModules = -1, sequenceFold = -1, arpFold = -1;
+    bool sequenceFolded = false, arpFolded = false;
+    ModuleCard sequenceModule { "SEQ" }, arpModule { "ARP" };
     std::array<PatternPad, 16> pads;
     juce::TextButton projectTitle { "Untitled Project" }, projectMenu { "Project" }, undoButton { "Undo" }, redoButton { "Redo" };
     juce::TextButton voicingButton { "Root position" };
@@ -151,7 +167,7 @@ private:
     juce::Label patternName;
     ChoiceControl launch { "launch", "Launch", { "Immediate", "Next 1/16", "Next beat", "Next bar", "Pattern end" } };
     juce::TextButton open { "Open" }, save { "Save" }, glossary { "Chords" };
-    juce::TextButton sequencer { "Sequencer" }, arpeggiator { "Arpeggiator" };
+    ModulePower sequencer { "SEQ power" }, arpeggiator { "ARP power" };
     juce::TextEditor progression;
     juce::TextButton apply { "Apply" }, example { "Try Dm9 - G13b9 - Cmaj9" };
     juce::Label message, status, summary;

@@ -106,11 +106,11 @@ void Arpeggiator::schedule (const Key& key, int transpose, const ArpeggiatorSett
             ? static_cast<double> (subdivision) * 0.5 * settings.swing / 100.0 : 0.0;
         heldDuration = juce::jmin (heldDuration, duration * juce::jmax (0.001, extensions + 1.0 + nextSwing - swingDelay));
     }
-    pending[static_cast<size_t> (pendingCount++)] = { key, transpose, nominalNext + duration * (swingDelay + jitter), heldDuration * 100.0 / settings.gate, nominalNext };
+    pending[static_cast<size_t> (pendingCount++)] = { key, transpose, nominalNext + duration * (swingDelay + jitter), heldDuration * 100.0 / settings.gate, nominalNext, step, rhythmStep };
 }
 
 void Arpeggiator::emit (const Key& key, int transpose, const ArpeggiatorSettings& settings, double duration,
-                       double sampleRate, juce::MidiBuffer& output, int sample)
+                       double sampleRate, juce::MidiBuffer& output, int sample, juce::uint64 ordinal, juce::uint64 rhythmOrdinal)
 {
     const int note = key.note + transpose;
     if (note < 0 || note > 127)
@@ -136,6 +136,11 @@ void Arpeggiator::emit (const Key& key, int transpose, const ArpeggiatorSettings
     if (velocity <= 0 || voiceCount >= static_cast<int> (voices.size()))
         return;
     output.addEvent (juce::MidiMessage::noteOn (key.channel, note, static_cast<juce::uint8> (velocity)), sample);
+    ++emittedSerial;
+    emittedStep = ordinal;
+    emittedRhythmStep = rhythmOrdinal;
+    emittedVelocity = velocity;
+    emittedClock = clock;
     voices[static_cast<size_t> (voiceCount++)] = { note, key.channel, key.note, clock + juce::jmax (1.0, duration * settings.gate / 100.0) };
 }
 
@@ -339,7 +344,7 @@ void Arpeggiator::render (const ArpeggiatorSettings& settings, const juce::MidiB
                     return key.note == hit.key.note && key.channel == hit.key.channel;
                 });
                 if (present && (settings.style == ArpeggiatorSettings::chordTrigger || i == newest))
-                    emit (hit.key, hit.transpose, settings, hit.duration, sampleRate, sampleMidi, sample);
+                    emit (hit.key, hit.transpose, settings, hit.duration, sampleRate, sampleMidi, sample, hit.ordinal, hit.rhythmOrdinal);
             }
             pendingCount = remaining;
         };

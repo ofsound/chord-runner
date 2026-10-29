@@ -537,3 +537,30 @@ TEST_CASE ("Held input count tracks physical keys without counting generated MID
     processor.processBlock (audio, midi);
     CHECK (count() == 0);
 }
+
+TEST_CASE ("Output pulse telemetry advances only on emitted arp attacks", "[arp][processor]")
+{
+    PluginProcessor processor;
+    configure (processor, false, true);
+    prepareArp (processor);
+    juce::AudioBuffer<float> audio (2, 512);
+    juce::MidiBuffer midi;
+    midi.addEvent (juce::MidiMessage::noteOn (1, 60, static_cast<juce::uint8> (91)), 100);
+    processor.processBlock (audio, midi);
+    const auto first = processor.getTransportState();
+    CHECK (static_cast<juce::int64> (first["arpPulseSerial"]) == 1);
+    CHECK (static_cast<juce::int64> (first["arpPulseStep"]) == 0);
+    CHECK (static_cast<int> (first["arpPulseVelocity"]) == 91);
+    CHECK (static_cast<double> (first["arpPulseSampleAgeMs"]) == Catch::Approx (412.0 / 48.0));
+    midi.clear();
+    processor.processBlock (audio, midi);
+    CHECK (static_cast<juce::int64> (processor.getTransportState()["arpPulseSerial"]) == 1);
+    auto state = processor.getTimelineState();
+    state["arp"].getDynamicObject()->setProperty ("gateSequenceEnabled", true);
+    state["arp"].getDynamicObject()->setProperty ("gateMask", 0);
+    REQUIRE (processor.setTimelineState (state).wasOk());
+    midi.clear();
+    midi.addEvent (juce::MidiMessage::noteOn (1, 64, static_cast<juce::uint8> (80)), 0);
+    processor.processBlock (audio, midi);
+    CHECK (static_cast<juce::int64> (processor.getTransportState()["arpPulseSerial"]) == 1);
+}

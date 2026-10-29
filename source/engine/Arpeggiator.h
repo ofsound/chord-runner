@@ -11,7 +11,7 @@ struct ArpeggiatorSettings
     bool enabled = false, sync = true, hold = false, velocityEnabled = false, velocityRetrigger = true;
     int style = up, steps = 0, distance = 12, offset = 0, retrigger = 1, repeats = 0, target = 64;
     bool gateSequenceEnabled = false, tieSequenceEnabled = false;
-    int gateLength = 16, tieLength = 16, gateMask = 65535, tieMask = 0;
+    int gateLength = 4, tieLength = 4, gateMask = 15, tieMask = 15;
     int swingSubdivision = 1, velocityHumanize = 0, timingHumanize = 0;
     double rate = 0.25, freeMs = 100.0, gate = 100.0, swing = 0.0, interval = 4.0, decay = 1000.0;
     bool operator== (const ArpeggiatorSettings& other) const
@@ -51,10 +51,15 @@ public:
     void render (const ArpeggiatorSettings&, const juce::MidiBuffer& input, juce::MidiBuffer& output,
                  double beat, double bpm, double sampleRate, int samples, bool running, bool changed);
     void stop (juce::MidiBuffer&, int sample = 0, bool clearKeys = true);
+    juce::uint64 triggerSerial() const { return emittedSerial; }
+    juce::uint64 triggerStep() const { return emittedStep; }
+    juce::uint64 triggerRhythmStep() const { return emittedRhythmStep; }
+    int triggerVelocity() const { return emittedVelocity; }
+    double triggerAgeMs (double rate) const { return (clock - emittedClock) * 1000.0 / juce::jmax (1.0, rate); }
 
 private:
     struct Key { int note = 0, channel = 1, velocity = 100; bool down = false; };
-    struct Pending { Key key; int transpose = 0; double at = 0.0, duration = 0.0, nominal = 0.0; };
+    struct Pending { Key key; int transpose = 0; double at = 0.0, duration = 0.0, nominal = 0.0; juce::uint64 ordinal = 0, rhythmOrdinal = 0; };
     struct Voice { int note = 0, channel = 1, source = 0; double off = 0.0; };
     juce::MidiBuffer sampleMidi;
     std::array<Key, capacity> keys {};
@@ -70,6 +75,9 @@ private:
     double clock = 0.0, next = 0.0, nominalNext = 0.0, velocityStart = 0.0, expectedBeat = 0.0;
     juce::int64 retriggerBucket = -1;
     bool wasRunning = false;
+    juce::uint64 emittedSerial = 0, emittedStep = 0, emittedRhythmStep = 0;
+    int emittedVelocity = 0;
+    double emittedClock = 0;
     unsigned randomNumber();
     juce::uint32 grooveSeed = 0x92d68ca2u;
     double grooveRandom();
@@ -77,6 +85,6 @@ private:
     void restart (bool velocity);
     void schedule (const Key&, int, const ArpeggiatorSettings&, double);
     void emit (const Key&, int transpose, const ArpeggiatorSettings&, double duration, double sampleRate,
-               juce::MidiBuffer&, int sample);
+               juce::MidiBuffer&, int sample, juce::uint64 ordinal, juce::uint64 rhythmOrdinal);
 };
 }

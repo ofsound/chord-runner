@@ -59,6 +59,7 @@ void PluginProcessor::processBlock (juce::AudioBuffer<float>& audio, juce::MidiB
     const int samples = audio.getNumSamples();
     if (samples <= 0)
         return;
+    const double blockTimeMs = juce::Time::getMillisecondCounterHiRes();
     snapshots->consume();
     const auto& bank = snapshots->current();
     const auto& master = bank.patterns[static_cast<size_t> (juce::jmax (0, activePattern))];
@@ -130,6 +131,7 @@ void PluginProcessor::processBlock (juce::AudioBuffer<float>& audio, juce::MidiB
     {
         if (count <= 0)
             return;
+        const auto previousTrigger = arpeggiator.triggerSerial();
         segmentMidi.clear();
         sequenceMidi.clear();
         inputMidi.clear();
@@ -185,6 +187,9 @@ void PluginProcessor::processBlock (juce::AudioBuffer<float>& audio, juce::MidiB
             else
                 releasePassedNotes (segmentMidi);
         }
+        if (arpeggiator.triggerSerial() != previousTrigger)
+            arpPulseDueMs.store (blockTimeMs + (start + count) * 1000.0 / juce::jmax (1.0, getSampleRate())
+                - arpeggiator.triggerAgeMs (getSampleRate()), std::memory_order_relaxed);
         // Concatenate already ordered segments in linear time. A one-event
         // scratch buffer lets JUCE encode timestamps without an ever-growing
         // addEvent search or relying on the private MIDI storage format.
@@ -233,6 +238,11 @@ void PluginProcessor::processBlock (juce::AudioBuffer<float>& audio, juce::MidiB
         internalBeat += samples * beatsPerSample;
     transportWasRunning = playing;
     expectedHostBeat = beat + samples * beatsPerSample;
+    arpPulseRhythmStep.store (arpeggiator.triggerRhythmStep(), std::memory_order_relaxed);
+    arpPulseStep.store (arpeggiator.triggerStep(), std::memory_order_relaxed);
+    arpPulseVelocity.store (arpeggiator.triggerVelocity(), std::memory_order_relaxed);
+    arpPulseAge.store (arpeggiator.triggerAgeMs (getSampleRate()), std::memory_order_relaxed);
+    arpPulseSerial.store (arpeggiator.triggerSerial(), std::memory_order_release);
     finishMidiBlock (midi);
     playingStatus.store (playing, std::memory_order_relaxed);
     hostAvailable.store (available, std::memory_order_relaxed);
@@ -365,6 +375,12 @@ juce::var PluginProcessor::getTransportState() const
     object->setProperty ("beat", beatStatus.load());
     object->setProperty ("tempo", tempoStatus.load());
     object->setProperty ("activeChord", chordStatus.load());
+    object->setProperty ("arpPulseSerial", static_cast<juce::int64> (arpPulseSerial.load (std::memory_order_acquire)));
+    object->setProperty ("arpPulseStep", static_cast<juce::int64> (arpPulseStep.load (std::memory_order_relaxed)));
+    object->setProperty ("arpPulseRhythmStep", static_cast<juce::int64> (arpPulseRhythmStep.load (std::memory_order_relaxed)));
+    object->setProperty ("arpPulseVelocity", arpPulseVelocity.load (std::memory_order_relaxed));
+    object->setProperty ("arpPulseSampleAgeMs", arpPulseAge.load (std::memory_order_relaxed));
+    object->setProperty ("arpPulseAgeMs", juce::Time::getMillisecondCounterHiRes() - arpPulseDueMs.load (std::memory_order_relaxed));
     object->setProperty ("heldInputNotes", resetRequested.load (std::memory_order_acquire) ? 0 : heldInputStatus.load (std::memory_order_relaxed));
     object->setProperty ("hostAvailable", hostAvailable.load());
     object->setProperty ("standalone", isStandalone());

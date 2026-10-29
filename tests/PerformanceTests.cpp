@@ -413,7 +413,7 @@ TEST_CASE ("Rhythm lanes recall with undo and reject malformed cycles atomically
     state["arp"].getDynamicObject()->setProperty ("gateLength", 0);
     CHECK (processor.editTimeline (state).failed());
     processor.undo();
-    CHECK (static_cast<int> (processor.getTimelineState()["arp"]["gateLength"]) == 16);
+    CHECK (static_cast<int> (processor.getTimelineState()["arp"]["gateLength"]) == 4);
     processor.redo();
     CHECK (static_cast<int> (processor.getTimelineState()["arp"]["gateLength"]) == 10);
 }

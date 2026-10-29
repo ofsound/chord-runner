@@ -105,6 +105,9 @@ private:
     std::array<bool, 16 * 128> inputKeysDown {}; // Audio-thread owned, no UI access.
     int inputKeyCount = 0;
     std::atomic<int> heldInputStatus { 0 };
+    std::atomic<juce::uint64> arpPulseSerial { 0 }, arpPulseStep { 0 }, arpPulseRhythmStep { 0 };
+    std::atomic<int> arpPulseVelocity { 0 };
+    std::atomic<double> arpPulseAge { 1000 }, arpPulseDueMs { 0 };
     void trackInputKeys (const juce::MidiBuffer&, int samples, bool clear);
     std::array<bool, 16> passedSustain {};
     bool previousSequencer = true, previousArp = false, bypassed = false;

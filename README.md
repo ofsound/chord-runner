@@ -146,7 +146,7 @@ iPhone uses five native pages with no scrolling: **Perform**, **Sequence**, **Ar
 
 ## Gate and tie rhythm lanes
 
-Open **Gate / Tie** in the desktop arp header or **Rhythm** on iPhone. Each lane has its own power switch, 1–16-step cycle and cell mask. Click cells to toggle them; drag the numbered end handle horizontally to resize the cycle (arrow keys also adjust it). Shortening a cycle preserves its hidden cells. Small landscape phones offer Gate/Tie subpages without scrolling.
+Gate and Tie sit side by side beneath the desktop arp controls; use **Rhythm** on iPhone. Each lane has its own power switch, 1–16-step cycle and cell mask. New patterns start with four lit steps in each lane and both power switches off. Drag the grip at the active range edge to resize (arrow keys also adjust it). Click beyond the range to extend it; click a step to toggle it, or drag a lit step to move the hit on release. Shortening a cycle preserves its hidden cells. Escape cancels a drag, and each completed gesture is one undo step. Small landscape phones offer Gate/Tie subpages without scrolling.
 
 Each cell advances on the arp base rate, in Sync or Free mode. Gate-off cells create rests while pitch order continues. An enabled tie cell continues the preceding held note/chord without a new attack, overriding a short gate so the original note does not stop between steps. Rests break ties; a tie after a rest starts a fresh note. The first step starts a note even if its tie cell is enabled. Entirely tied cycles sustain until a release/stop/reset; finite repeat counts still release. Cycles continue across note-triggered chord changes, while source-note replacement releases the previous chord safely. Transport stop resets both cycles.
 

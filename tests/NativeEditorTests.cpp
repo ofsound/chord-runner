@@ -284,17 +284,22 @@ TEST_CASE ("iPad fits both modules within the safe viewport", "[native-ui][table
 TEST_CASE ("Rhythm cycle handles and cells edit the saved lane with undo", "[native-ui][rhythm]")
 {
     PluginProcessor processor;
+    const auto defaults = processor.getTimelineState()["arp"];
+    CHECK (static_cast<int> (defaults["gateLength"]) == 4);
+    CHECK (static_cast<int> (defaults["tieLength"]) == 4);
+    CHECK (static_cast<int> (defaults["gateMask"]) == 15);
+    CHECK (static_cast<int> (defaults["tieMask"]) == 15);
     NativeEditor editor (processor);
     editor.setSize (390, 844);
     toggle (editor, "arp.enabled", true);
     control<juce::TextButton> (editor, "phone.page.4").onClick();
     auto& handle = control<juce::Component> (editor, "rhythm.gate.length");
     REQUIRE (handle.keyPressed (juce::KeyPress (juce::KeyPress::leftKey)));
-    CHECK (static_cast<int> (processor.getTimelineState()["arp"]["gateLength"]) == 15);
+    CHECK (static_cast<int> (processor.getTimelineState()["arp"]["gateLength"]) == 3);
     editor.controller.undo();
-    CHECK (static_cast<int> (processor.getTimelineState()["arp"]["gateLength"]) == 16);
+    CHECK (static_cast<int> (processor.getTimelineState()["arp"]["gateLength"]) == 4);
     control<juce::TextButton> (editor, "rhythm.gate.2").onClick();
-    CHECK (static_cast<int> (processor.getTimelineState()["arp"]["gateMask"]) == 65533);
+    CHECK (static_cast<int> (processor.getTimelineState()["arp"]["gateMask"]) == 13);
 }
 
 TEST_CASE ("Voice-leading choice updates the native sequence header and actual timeline", "[native-ui][voicing]")
@@ -315,13 +320,13 @@ TEST_CASE ("Arp-only view reclaims sequence space and previews production MIDI",
     NativeEditor editor (processor);
     editor.setSize (1400, 1000);
     toggle (editor, "arp.enabled", true);
-    const auto original = control<juce::ComboBox> (editor, "arp.style").getScreenBounds();
+    const auto original = control<juce::ComboBox> (editor, "arp.style").getParentComponent()->getY();
     toggle (editor, "sequencerEnabled", false);
     auto& preview = control<ArpVisualizer> (editor, "arp.visualizer");
     CHECK (preview.isVisible());
     CHECK_FALSE (control<juce::TextEditor> (editor, "progression").isVisible());
     CHECK (control<juce::TextButton> (editor, "sequencerEnabled").getParentComponent()->getHeight() == 44);
-    CHECK (control<juce::ComboBox> (editor, "arp.style").getScreenBounds() == original);
+    CHECK (control<juce::ComboBox> (editor, "arp.style").getParentComponent()->getY() > original);
     REQUIRE_FALSE (preview.previewNotes().empty());
     for (const auto& note : preview.previewNotes()) CHECK (note.end >= note.start);
     const auto beforeSequenceEdit = preview.previewNotes();
@@ -595,4 +600,248 @@ TEST_CASE ("Abstract arp ranks follow live MIDI key counts and fall back to four
     processor.processBlock (audio, midi);
     editor.controller.poll();
     CHECK (preview.inputRanks() == 4);
+}
+
+TEST_CASE ("Desktop header consolidates transport projects and square pattern pads", "[native-ui][header]")
+{
+    PluginProcessor processor;
+    NativeEditor editor (processor);
+    for (const auto size : { juce::Point<int> (760, 540), juce::Point<int> (1024, 724), juce::Point<int> (1120, 800), juce::Point<int> (1400, 1000) })
+    {
+        editor.setSize (size.x, size.y);
+        auto& playButton = control<juce::TextButton> (editor, "play");
+        CHECK (playButton.getBottom() <= 56);
+        CHECK (control<juce::Slider> (editor, "tempo").getParentComponent()->getBottom() <= 56);
+        CHECK (control<juce::ComboBox> (editor, "clock").getParentComponent()->getBottom() <= 56);
+        CHECK (control<juce::Viewport> (editor, "body.viewport").getY() < 206);
+        for (int i = 1; i <= 16; ++i)
+        {
+            const auto& pad = control<juce::TextButton> (editor, "pattern." + juce::String (i));
+            CHECK (pad.getWidth() == pad.getHeight());
+            CHECK (pad.getWidth() >= 32);
+            CHECK (pad.getWidth() <= 40);
+            CHECK (editor.getLocalBounds().contains (pad.getBounds()));
+            for (const auto* id : { "project.details", "project.menu", "undo", "redo" })
+                CHECK_FALSE (pad.getBounds().intersects (findControl (editor, id)->getBounds()));
+        }
+    }
+}
+
+TEST_CASE ("Modules collapse automatically and title bars fold without changing routing", "[native-ui][header]")
+{
+    PluginProcessor processor;
+    NativeEditor editor (processor);
+    editor.setSize (1120, 900);
+    auto& sequenceCard = control<ModuleCard> (editor, "sequence.module");
+    auto& arpCard = control<ModuleCard> (editor, "arp.module");
+    CHECK (arpCard.getHeight() == 44);
+    CHECK_FALSE (control<juce::ComboBox> (editor, "arp.style").getParentComponent()->isVisible());
+    CHECK (sequenceCard.getHeight() > 224);
+    const auto image = editor.createComponentSnapshot (editor.getLocalBounds());
+    juce::FileOutputStream stream (juce::File ("/tmp/chord-runner-sequencer-only.png"));
+    stream.setPosition (0); stream.truncate();
+    juce::PNGImageFormat().writeImageToStream (image, stream);
+    arpCard.onHeaderDoubleClick();
+    CHECK (arpCard.getHeight() > 44);
+    CHECK_FALSE (static_cast<bool> (processor.getTimelineState()["arp"]["enabled"]));
+    sequenceCard.onHeaderDoubleClick();
+    CHECK (sequenceCard.getHeight() == 44);
+    CHECK (static_cast<bool> (processor.getTimelineState()["sequencerEnabled"]));
+    sequenceCard.onHeaderDoubleClick();
+    CHECK (sequenceCard.getHeight() > 44);
+    toggle (editor, "arp.enabled", true);
+    CHECK (arpCard.getHeight() > 44);
+    toggle (editor, "sequencerEnabled", false);
+    CHECK (sequenceCard.getHeight() == 44);
+    CHECK (control<ArpVisualizer> (editor, "arp.visualizer").isVisible());
+    toggle (editor, "sequencerEnabled", true);
+    toggle (editor, "arp.enabled", false);
+    CHECK (arpCard.getHeight() == 44);
+    CHECK_FALSE (control<ArpVisualizer> (editor, "arp.visualizer").isVisible());
+}
+
+TEST_CASE ("Inline Gate and Tie share a row below arp controls and visualization", "[native-ui][rhythm]")
+{
+    PluginProcessor processor;
+    NativeEditor editor (processor);
+    editor.setSize (1400, 1000);
+    toggle (editor, "arp.enabled", true);
+    toggle (editor, "sequencerEnabled", false);
+    auto& gateLane = control<CycleLane> (editor, "rhythm.gate");
+    auto& tieLane = control<CycleLane> (editor, "rhythm.tie");
+    auto& preview = control<ArpVisualizer> (editor, "arp.visualizer");
+    auto& arp = control<ModuleCard> (editor, "arp.module");
+    const auto gateBounds = arp.getLocalArea (&gateLane, gateLane.getLocalBounds());
+    const auto tieBounds = arp.getLocalArea (&tieLane, tieLane.getLocalBounds());
+    CHECK (gateLane.isVisible());
+    CHECK (tieLane.isVisible());
+    CHECK (gateLane.getParentComponent()->isVisible());
+    CHECK (gateBounds.getY() == tieBounds.getY());
+    CHECK (gateBounds.getHeight() <= 64);
+    CHECK (gateBounds.getRight() < tieBounds.getX());
+    CHECK (gateBounds.getY() > 220);
+    CHECK (preview.getBottom() < gateBounds.getY());
+    auto& power = control<juce::ToggleButton> (editor, "rhythm.gate.enabled");
+    power.setToggleState (true, juce::dontSendNotification); power.onClick();
+    control<juce::TextButton> (editor, "rhythm.gate.2").onClick();
+    CHECK ((static_cast<int> (processor.getTimelineState()["arp"]["gateMask"]) & 2) == 0);
+    editor.setSize (1120, 900);
+    auto* row = gateLane.getParentComponent();
+    const auto image = row->createComponentSnapshot (row->getLocalBounds());
+    juce::FileOutputStream stream (juce::File ("/tmp/chord-runner-rhythm-compact.png"));
+    stream.setPosition (0); stream.truncate();
+    juce::PNGImageFormat().writeImageToStream (image, stream);
+
+}
+
+TEST_CASE ("Enabled rhythm lanes preview their complete first cycle across beat restarts", "[arp-preview]")
+{
+    ArpVisualizer preview;
+    chordrunner::ArpeggiatorSettings settings;
+    settings.retrigger = 2;
+    settings.interval = 4;
+    settings.rate = 0.5;
+    settings.gateSequenceEnabled = true;
+    settings.gateLength = 16;
+    settings.gateMask = 0x5555;
+    preview.update (settings, 120);
+    CHECK (preview.windowBeats() == Catch::Approx (8));
+    REQUIRE (preview.previewNotes().size() == 8);
+    CHECK (preview.previewNotes().back().start == Catch::Approx (7));
+    settings.gateMask = 0xffff;
+    settings.tieSequenceEnabled = true;
+    settings.tieLength = 16;
+    settings.tieMask = 0xaaaa;
+    preview.update (settings, 120);
+    REQUIRE (preview.previewNotes().size() == 8);
+    CHECK (preview.previewNotes().front().end == Catch::Approx (1));
+    settings.gateSequenceEnabled = settings.tieSequenceEnabled = false;
+    preview.update (settings, 120);
+    CHECK (preview.windowBeats() == Catch::Approx (4));
+    CHECK (preview.previewNotes().size() == 8);
+    settings.gateSequenceEnabled = settings.tieSequenceEnabled = true;
+    settings.gateMask = 0xdddd;
+    settings.tieMask = 0x8888;
+    settings.velocityEnabled = true;
+    settings.target = 16;
+    settings.decay = 2000;
+    preview.setSize (1080, 400);
+    preview.update (settings, 120);
+    const auto image = preview.createComponentSnapshot (preview.getLocalBounds());
+    juce::FileOutputStream stream (juce::File ("/tmp/chord-runner-rhythm-preview.png"));
+    stream.setPosition (0); stream.truncate();
+    juce::PNGImageFormat().writeImageToStream (image, stream);
+
+}
+
+TEST_CASE ("Sequence source settings belong to the sequence panel and collapse with it", "[native-ui]")
+{
+    PluginProcessor processor;
+    NativeEditor editor (processor);
+    editor.setSize (1120, 900);
+    for (const auto* id : { "velocity", "octave", "channel" })
+    {
+        auto* component = findControl (editor, id);
+        REQUIRE (component != nullptr);
+        CHECK (component->getParentComponent()->getParentComponent()->getComponentID() == "sequence.module");
+        CHECK (component->getParentComponent()->isVisible());
+    }
+    toggle (editor, "arp.enabled", true);
+    toggle (editor, "sequencerEnabled", false);
+    for (const auto* id : { "velocity", "octave", "channel" })
+        CHECK_FALSE (findControl (editor, id)->getParentComponent()->isVisible());
+}
+
+namespace
+{
+juce::MouseEvent cyclePointerEvent (juce::Component& component, juce::Point<float> point, juce::Point<float> origin)
+{
+    return { juce::Desktop::getInstance().getMainMouseSource(), point,
+        juce::ModifierKeys (juce::ModifierKeys::leftButtonModifier), 1.0f, 0.0f, 0.0f, 0.0f, 0.0f,
+        &component, &component, juce::Time::getCurrentTime(), origin, juce::Time::getCurrentTime(), 1, true };
+}
+}
+TEST_CASE ("KSH-style cycle edge follows the pointer and groups length edits for undo", "[native-ui][rhythm]")
+{
+    PluginProcessor processor;
+    auto initial = processor.getTimelineState();
+    initial["arp"].getDynamicObject()->setProperty ("gateLength", 4);
+    initial["arp"].getDynamicObject()->setProperty ("gateMask", 5);
+    initial["arp"].getDynamicObject()->setProperty ("gateSequenceEnabled", true);
+    REQUIRE (processor.setTimelineState (initial).wasOk());
+    EditorController controller (processor);
+    CycleLane lane (controller, false);
+    lane.setInline (true); lane.setSize (640, 60);
+    const auto image = lane.createComponentSnapshot (lane.getLocalBounds());
+    juce::FileOutputStream stream (juce::File ("/tmp/chord-runner-ksh-cycle.png"));
+    stream.setPosition (0); stream.truncate();
+    juce::PNGImageFormat().writeImageToStream (image, stream);
+    auto& handle = control<juce::Component> (lane, "rhythm.gate.length");
+    auto& last = control<juce::TextButton> (lane, "rhythm.gate.4");
+    CHECK (handle.getX() == last.getRight() - 4);
+    CHECK (handle.getY() == last.getY());
+    CHECK (handle.getWidth() == 9);
+    const auto origin = handle.getLocalBounds().getCentre().toFloat();
+    auto dragTo = [&] (int index)
+    {
+        const auto& cell = control<juce::TextButton> (lane, "rhythm.gate." + juce::String (index));
+        const auto point = cell.getBounds().getTopRight().toFloat() + juce::Point<float> (0, 8);
+        handle.mouseDrag (cyclePointerEvent (handle, point - handle.getPosition().toFloat(), origin));
+    };
+    handle.mouseDown (cyclePointerEvent (handle, origin, origin));
+    dragTo (10);
+    CHECK (static_cast<int> (processor.getTimelineState()["arp"]["gateLength"]) == 10);
+    dragTo (6);
+    handle.mouseUp (cyclePointerEvent (handle, origin, origin));
+    CHECK (static_cast<int> (processor.getTimelineState()["arp"]["gateLength"]) == 6);
+    controller.undo(); lane.refresh();
+    CHECK (static_cast<int> (processor.getTimelineState()["arp"]["gateLength"]) == 4);
+    CHECK_FALSE (processor.canUndo());
+    handle.mouseDown (cyclePointerEvent (handle, origin, origin));
+    dragTo (9);
+    CHECK (handle.keyPressed (juce::KeyPress (juce::KeyPress::escapeKey)));
+    CHECK (static_cast<int> (processor.getTimelineState()["arp"]["gateLength"]) == 4);
+    lane.refresh();
+    auto& ninth = control<juce::TextButton> (lane, "rhythm.gate.9");
+    CHECK (ninth.isEnabled());
+    ninth.onClick();
+    CHECK (static_cast<int> (processor.getTimelineState()["arp"]["gateLength"]) == 9);
+    CHECK (static_cast<int> (processor.getTimelineState()["arp"]["gateMask"]) == 5);
+    handle.mouseDown (cyclePointerEvent (handle, origin, origin));
+    processor.selectPattern (1);
+    dragTo (12);
+    CHECK (static_cast<int> (processor.getTimelineState()["arp"]["gateLength"]) == 4);
+}
+TEST_CASE ("KSH-style cycle hits move on release and canceled drags never toggle", "[native-ui][rhythm]")
+{
+    PluginProcessor processor;
+    auto initial = processor.getTimelineState();
+    initial["arp"].getDynamicObject()->setProperty ("gateLength", 4);
+    initial["arp"].getDynamicObject()->setProperty ("gateMask", 5);
+    REQUIRE (processor.setTimelineState (initial).wasOk());
+    EditorController controller (processor);
+    CycleLane lane (controller, false);
+    lane.setInline (true); lane.setSize (640, 76);
+    auto& first = control<juce::Component> (lane, "rhythm.gate.1");
+    auto& fourth = control<juce::TextButton> (lane, "rhythm.gate.4");
+    const auto origin = first.getLocalBounds().getCentre().toFloat();
+    const auto destination = fourth.getBounds().getCentre().toFloat() - first.getPosition().toFloat();
+    first.mouseDown (cyclePointerEvent (first, origin, origin));
+    first.mouseDrag (cyclePointerEvent (first, destination, origin));
+    CHECK (static_cast<int> (processor.getTimelineState()["arp"]["gateMask"]) == 5);
+    first.mouseUp (cyclePointerEvent (first, destination, origin));
+    CHECK (static_cast<int> (processor.getTimelineState()["arp"]["gateMask"]) == 12);
+    controller.undo(); lane.refresh();
+    CHECK (static_cast<int> (processor.getTimelineState()["arp"]["gateMask"]) == 5);
+    CHECK_FALSE (processor.canUndo());
+    first.mouseDown (cyclePointerEvent (first, origin, origin));
+    first.mouseDrag (cyclePointerEvent (first, destination, origin));
+    CHECK (first.keyPressed (juce::KeyPress (juce::KeyPress::escapeKey)));
+    first.mouseUp (cyclePointerEvent (first, destination, origin));
+    CHECK (static_cast<int> (processor.getTimelineState()["arp"]["gateMask"]) == 5);
+    first.mouseDown (cyclePointerEvent (first, origin, origin));
+    first.mouseDrag (cyclePointerEvent (first, destination, origin));
+    processor.selectPattern (1); controller.refresh(); lane.refresh();
+    first.mouseUp (cyclePointerEvent (first, destination, origin));
+    CHECK (static_cast<int> (processor.getTimelineState()["arp"]["gateMask"]) == 15);
 }
