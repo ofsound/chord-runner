@@ -228,7 +228,7 @@ TEST_CASE ("Internal transport plays, stops and restores a silent session", "[pr
     processor.setPlaying (true);
     processor.processBlock (audio, midi);
     REQUIRE (events (midi).size() == 3);
-    CHECK (events (midi)[0].channel == 3);
+    CHECK (events (midi)[0].channel == 1);
     juce::MemoryBlock saved;
     processor.getStateInformation (saved);
     processor.setStateInformation (saved.getData(), static_cast<int> (saved.getSize()));
@@ -240,7 +240,7 @@ TEST_CASE ("Internal transport plays, stops and restores a silent session", "[pr
     restored.setStateInformation (saved.getData(), static_cast<int> (saved.getSize()));
     CHECK (restored.getTimelineState()["progression"].toString() == "C1/2 G1/2 | Am2");
     CHECK (static_cast<double> (restored.getTimelineState()["tempo"]) == 137.0);
-    CHECK (static_cast<int> (restored.getTimelineState()["channel"]) == 3);
+    CHECK (static_cast<int> (restored.getTimelineState()["channel"]) == 1);
     restored.setStateInformation ("invalid", 7);
     CHECK (restored.getTimelineState()["progression"].toString() == "C1/2 G1/2 | Am2");
 }

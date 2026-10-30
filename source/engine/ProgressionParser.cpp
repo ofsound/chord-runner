@@ -121,7 +121,13 @@ juce::Result parse (const juce::String& text, Timeline& destination, juce::Strin
     }
     if (next.count == 0)
         return juce::Result::fail ("Enter a progression, for example C - G - Am - F.");
-    for (auto& chord : next.chords) chord.toneOffsets.fill (0);
+    for (auto& chord : next.chords)
+    {
+        chord.toneOffsets.fill (0);
+        chord.startOffsets.fill (0.0);
+        chord.durations.fill (0.0);
+    }
+    next.loopBeats = 0.0;
     applyVoiceLeading (next);
     destination = next;
     if (migratedText != nullptr)

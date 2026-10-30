@@ -13,6 +13,7 @@ struct Chord
 {
     std::array<int, maxNotes> notes { 60, 64, 67 };
     std::array<int, maxNotes> toneOffsets {};
+    std::array<double, maxNotes> startOffsets {}, durations {};
     std::array<char, 64> label { 'C', '\0' };
     int noteCount = 3;
     double beats = 4.0;
@@ -22,7 +23,7 @@ struct Timeline
 {
     std::array<Chord, maxChords> chords {};
     int count = 4, channel = 1, velocity = 100, octave = 4, voiceLeading = 0;
-    double tempo = 120.0;
+    double tempo = 120.0, loopBeats = 0.0;
     bool hostSync = false, sequencerEnabled = true;
     ArpeggiatorSettings arp;
     juce::uint64 noteRevision = 0;
@@ -36,13 +37,20 @@ struct Timeline
         chords[3].notes = { 65, 69, 72 };
         chords[3].label = { 'F', '\0' };
     }
-    double length() const
+    double progressionLength() const
     {
         double result = 0.0;
         for (int i = 0; i < count; ++i)
             result += chords[static_cast<size_t> (i)].beats;
         return result;
     }
+    double length() const { return juce::jmax (progressionLength(), loopBeats); }
+};
+
+struct NoteEdit
+{
+    int chord = 0, tone = 0, pitch = 60;
+    double start = 0.0, duration = 4.0;
 };
 
 void applyVoiceLeading (Timeline&);

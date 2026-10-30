@@ -13,8 +13,9 @@ public:
     int activeChord() const { return activeIndex; }
 
 private:
-    std::array<int, maxNotes> held {};
-    int heldCount = 0, heldChannel = 1, activeIndex = -1;
+    std::array<bool, maxChords * maxNotes> held {};
+    std::array<int, 128> pitchCounts {};
+    int heldChannel = 1, activeIndex = -1;
     juce::int64 lastCycle = -1;
     double expectedBeat = 0.0;
     bool wasPlaying = false;

@@ -21,9 +21,11 @@ juce::var encodeTimeline (const chordrunner::Timeline& state, const juce::String
     arp->setProperty ("sync", state.arp.sync);
     arp->setProperty ("hold", state.arp.hold);
     arp->setProperty ("velocityEnabled", state.arp.velocityEnabled);
+    arp->setProperty ("strength", state.arp.strength);
     arp->setProperty ("velocityRetrigger", state.arp.velocityRetrigger);
     arp->setProperty ("style", state.arp.style);
     arp->setProperty ("steps", state.arp.steps);
+    arp->setProperty ("octaveMode", state.arp.octaveMode);
     arp->setProperty ("distance", state.arp.distance);
     arp->setProperty ("offset", state.arp.offset);
     arp->setProperty ("retrigger", state.arp.retrigger);
@@ -61,13 +63,30 @@ juce::var encodeTimeline (const chordrunner::Timeline& state, const juce::String
     }
     if (edited) object->setProperty ("toneOffsets", offsets);
     object->setProperty ("totalBeats", state.length());
+    if (state.loopBeats > state.progressionLength())
+        object->setProperty ("loopBeats", state.loopBeats);
+    bool timingEdited = false;
+    juce::Array<juce::var> timing;
+    for (int c = 0; c < state.count; ++c)
+    {
+        juce::Array<juce::var> row;
+        const auto& chord = state.chords[static_cast<size_t> (c)];
+        for (int n = 0; n < chord.noteCount; ++n)
+        {
+            timingEdited = timingEdited || std::abs (chord.startOffsets[static_cast<size_t> (n)]) > 1.0e-9 || chord.durations[static_cast<size_t> (n)] > 0.0;
+            row.add (juce::Array<juce::var> { chord.startOffsets[static_cast<size_t> (n)], chord.durations[static_cast<size_t> (n)] });
+        }
+        timing.add (row);
+    }
+    if (timingEdited)
+        object->setProperty ("noteTiming", timing);
     juce::Array<juce::var> chords;
     double start = 0.0;
     for (int i = 0; i < state.count; ++i)
     {
         const auto& chord = state.chords[static_cast<size_t> (i)];
         auto item = std::make_unique<juce::DynamicObject>();
-        item->setProperty ("edited", std::any_of (chord.toneOffsets.begin(), chord.toneOffsets.end(), [] (int offset) { return offset != 0; }));
+        item->setProperty ("edited", std::any_of (chord.toneOffsets.begin(), chord.toneOffsets.end(), [] (int offset) { return offset != 0; }) || std::any_of (chord.startOffsets.begin(), chord.startOffsets.end(), [] (double offset) { return std::abs (offset) > 1.0e-9; }) || std::any_of (chord.durations.begin(), chord.durations.end(), [] (double duration) { return duration > 0.0; }));
         item->setProperty ("label", juce::String::fromUTF8 (chord.label.data()));
         item->setProperty ("beats", chord.beats);
         item->setProperty ("startBeat", start);
@@ -76,6 +95,14 @@ juce::var encodeTimeline (const chordrunner::Timeline& state, const juce::String
         for (int n = 0; n < chord.noteCount; ++n)
             notes.add (chord.notes[static_cast<size_t> (n)]);
         item->setProperty ("notes", notes);
+        juce::Array<juce::var> starts, durations;
+        for (int n = 0; n < chord.noteCount; ++n)
+        {
+            starts.add (start - chord.beats + chord.startOffsets[static_cast<size_t> (n)]);
+            durations.add (chord.durations[static_cast<size_t> (n)] > 0 ? chord.durations[static_cast<size_t> (n)] : chord.beats);
+        }
+        item->setProperty ("noteStarts", starts);
+        item->setProperty ("noteDurations", durations);
         chords.add (juce::var (item.release()));
     }
     object->setProperty ("chords", chords);
@@ -105,7 +132,7 @@ juce::Result decodeTimeline (const juce::var& value, chordrunner::Timeline& next
         || ! value["hostSync"].isBool() || ! value["progression"].isString())
         return juce::Result::fail ("Invalid Chord Runner settings or unsupported project version.");
     next.tempo = static_cast<double> (value["tempo"]);
-    next.channel = static_cast<int> (value["channel"]);
+    next.channel = 1; // Accept legacy channel selections, but always generate on channel 1.
     next.velocity = static_cast<int> (value["velocity"]);
     next.octave = static_cast<int> (value["octave"]);
     if (value.hasProperty ("voiceLeading"))
@@ -126,7 +153,7 @@ juce::Result decodeTimeline (const juce::var& value, chordrunner::Timeline& next
             || ! numberInRange (arp["style"], 0, 10)
             || ! numberInRange (arp["steps"], 0, 8)
             || ! numberInRange (arp["distance"], -36, 36)
-            || ! numberInRange (arp["offset"], 0, 128)
+            || ! numberInRange (arp["offset"], 0, 2285)
             || ! numberInRange (arp["retrigger"], 0, 2)
             || ! numberInRange (arp["repeats"], 0, 64)
             || ! numberInRange (arp["target"], 0, 127)
@@ -143,13 +170,23 @@ juce::Result decodeTimeline (const juce::var& value, chordrunner::Timeline& next
         next.arp.sync = static_cast<bool> (arp["sync"]);
         next.arp.hold = static_cast<bool> (arp["hold"]);
         next.arp.velocityEnabled = static_cast<bool> (arp["velocityEnabled"]);
-        next.arp.velocityRetrigger = static_cast<bool> (arp["velocityRetrigger"]);
+        if (arp.hasProperty ("strength"))
+        {
+            if (! numberInRange (arp["strength"], 0, 100, false)) return juce::Result::fail ("Invalid envelope strength.");
+            next.arp.strength = static_cast<double> (arp["strength"]);
+        }
+        next.arp.velocityRetrigger = true; // Legacy files may contain false; phrase restarts now always reset dynamics.
         next.arp.style = static_cast<int> (arp["style"]);
         next.arp.steps = static_cast<int> (arp["steps"]);
-        next.arp.distance = static_cast<int> (arp["distance"]);
+        if (arp.hasProperty ("octaveMode"))
+        {
+            if (! numberInRange (arp["octaveMode"], 0, 1)) return juce::Result::fail ("Invalid octave order.");
+            next.arp.octaveMode = static_cast<int> (arp["octaveMode"]);
+        }
+        next.arp.distance = 12; // The arp range now expands only in octaves.
         next.arp.offset = static_cast<int> (arp["offset"]);
         next.arp.retrigger = static_cast<int> (arp["retrigger"]);
-        next.arp.repeats = static_cast<int> (arp["repeats"]);
+        next.arp.repeats = juce::jmin (8, static_cast<int> (arp["repeats"]));
         next.arp.target = static_cast<int> (arp["target"]);
         next.arp.rate = static_cast<double> (arp["rate"]);
         next.arp.freeMs = static_cast<double> (arp["freeMs"]);
@@ -224,6 +261,40 @@ juce::Result decodeTimeline (const juce::var& value, chordrunner::Timeline& next
             }
         }
     }
+    if (value.hasProperty ("loopBeats"))
+    {
+        if (!numberInRange (value["loopBeats"], next.progressionLength(), 4096.0, false))
+            return juce::Result::fail ("Grid length must cover the progression and stay within 1024 bars.");
+        next.loopBeats = static_cast<double> (value["loopBeats"]);
+    }
+    if (value.hasProperty ("noteTiming"))
+    {
+        const auto* timing = value["noteTiming"].getArray();
+        if (timing == nullptr || timing->size() != next.count)
+            return juce::Result::fail ("Invalid note timing.");
+        double start = 0.0;
+        for (int c = 0; c < next.count; ++c)
+        {
+            auto& chord = next.chords[static_cast<size_t> (c)];
+            const auto* row = timing->getReference (c).getArray();
+            if (row == nullptr || row->size() != chord.noteCount)
+                return juce::Result::fail ("Invalid note timing.");
+            for (int n = 0; n < chord.noteCount; ++n)
+            {
+                const auto* pair = row->getReference (n).getArray();
+                if (pair == nullptr || pair->size() != 2 || !numberInRange ((*pair)[0], -start, next.length() - start, false)
+                    || !numberInRange ((*pair)[1], 0.0, next.length(), false))
+                    return juce::Result::fail ("Invalid note timing.");
+                const double offset = static_cast<double> ((*pair)[0]);
+                const double duration = static_cast<double> ((*pair)[1]);
+                if ((duration > 0.0 && duration < 0.0625) || start + offset + (duration > 0 ? duration : chord.beats) > next.length() + 1.0e-9)
+                    return juce::Result::fail ("Notes must fit inside the grid.");
+                chord.startOffsets[static_cast<size_t> (n)] = offset;
+                chord.durations[static_cast<size_t> (n)] = duration;
+            }
+            start += chord.beats;
+        }
+    }
     return juce::Result::ok();
 }
 }
@@ -265,10 +336,12 @@ juce::Result PluginProcessor::setTimelineState (const juce::var& value)
         const auto& state = pattern.timeline;
         bool tonesChanged = next.count != state.count;
         for (int c = 0; c < juce::jmin (next.count, state.count); ++c)
-            tonesChanged = tonesChanged || next.chords[static_cast<size_t> (c)].notes != state.chords[static_cast<size_t> (c)].notes;
-        const bool changed = tonesChanged || text != pattern.progression || next.octave != state.octave
-            || next.channel != state.channel || next.voiceLeading != state.voiceLeading || next.velocity != state.velocity
-            || next.sequencerEnabled != state.sequencerEnabled || next.arp != state.arp;
+            tonesChanged = tonesChanged || next.chords[static_cast<size_t> (c)].notes != state.chords[static_cast<size_t> (c)].notes
+                           || next.chords[static_cast<size_t> (c)].startOffsets != state.chords[static_cast<size_t> (c)].startOffsets
+                           || next.chords[static_cast<size_t> (c)].durations != state.chords[static_cast<size_t> (c)].durations;
+        const bool changed = tonesChanged || std::abs (next.length() - state.length()) > 1.0e-9 || text != pattern.progression || next.octave != state.octave
+                             || next.channel != state.channel || next.voiceLeading != state.voiceLeading || next.velocity != state.velocity
+                             || next.sequencerEnabled != state.sequencerEnabled || next.arp != state.arp;
         next.noteRevision = state.noteRevision + (changed ? 1u : 0u);
         // Tempo and clock belong to the project, and never restart held notes.
         for (auto& item : patterns)
@@ -680,4 +753,60 @@ chordrunner::ArpeggiatorSettings PluginProcessor::getArpPreviewSettings() const
     const juce::ScopedLock lock (stateLock);
     const int selection = selectedStatus.load();
     return patterns[static_cast<size_t> (juce::jmax (0, selection))].timeline.arp;
+}
+
+juce::Result PluginProcessor::editNotes (const std::vector<chordrunner::NoteEdit>& edits, int expectedRevision)
+{
+    const juce::ScopedLock lock (stateLock);
+    const int selection = selectedStatus.load();
+    if (selection < 0 || revision.load() != expectedRevision)
+        return juce::Result::fail ("The pattern changed during the note edit.");
+    auto next = patterns[static_cast<size_t> (selection)].timeline;
+    bool changed = false;
+    for (const auto& edit : edits)
+    {
+        if (edit.chord < 0 || edit.chord >= next.count)
+            return juce::Result::fail ("Invalid chord.");
+        auto& chord = next.chords[static_cast<size_t> (edit.chord)];
+        if (edit.tone < 0 || edit.tone >= chord.noteCount || edit.pitch < 0 || edit.pitch > 127
+            || !std::isfinite (edit.start) || !std::isfinite (edit.duration) || edit.start < 0.0
+            || edit.duration < 0.0625 || edit.start + edit.duration > next.length() + 1.0e-9)
+            return juce::Result::fail ("Notes must fit inside the grid.");
+        double origin = 0.0;
+        for (int c = 0; c < edit.chord; ++c)
+            origin += next.chords[static_cast<size_t> (c)].beats;
+        const auto n = static_cast<size_t> (edit.tone);
+        changed = changed || chord.notes[n] != edit.pitch || std::abs (origin + chord.startOffsets[n] - edit.start) > 1.0e-9
+                  || std::abs ((chord.durations[n] > 0 ? chord.durations[n] : chord.beats) - edit.duration) > 1.0e-9;
+        chord.toneOffsets[n] += edit.pitch - chord.notes[n];
+        chord.notes[n] = edit.pitch;
+        chord.startOffsets[n] = edit.start - origin;
+        chord.durations[n] = edit.duration;
+    }
+    for (int c = 0; c < next.count; ++c)
+        for (int n = 0; n < next.chords[static_cast<size_t> (c)].noteCount; ++n)
+            for (int m = 0; m < n; ++m)
+                if (next.chords[static_cast<size_t> (c)].notes[static_cast<size_t> (m)] == next.chords[static_cast<size_t> (c)].notes[static_cast<size_t> (n)])
+                    return juce::Result::fail ("Each chord tone needs a distinct pitch.");
+    if (!changed)
+        return juce::Result::ok();
+    const auto before = getProjectState();
+    ++next.noteRevision;
+    patterns[static_cast<size_t> (selection)].timeline = next;
+    publishBank();
+    rememberEdit (before, "note drag");
+    updateHostDisplay (ChangeDetails().withNonParameterStateChanged (true));
+    return juce::Result::ok();
+}
+
+juce::Result PluginProcessor::resizeLoop (double beats, int expectedRevision)
+{
+    const juce::ScopedLock lock (stateLock);
+    if (revision.load() != expectedRevision || selectedStatus.load() < 0)
+        return juce::Result::fail ("The pattern changed during the grid resize.");
+    auto state = getTimelineState();
+    if (std::isfinite (beats) && std::abs (beats - static_cast<double> (state["totalBeats"])) < 1.0e-9)
+        return juce::Result::ok();
+    state.getDynamicObject()->setProperty ("loopBeats", beats);
+    return editTimeline (state, "grid length");
 }

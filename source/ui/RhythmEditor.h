@@ -1,5 +1,7 @@
 #pragma once
 #include "EditorController.h"
+#include "UiPalette.h"
+#include "ModulePower.h"
 #include <melatonin_blur/melatonin_blur.h>
 
 namespace chordrunner::ui
@@ -26,7 +28,7 @@ namespace chordrunner::ui
         EditorController& controller;
         bool tieLane;
         int length = 4, mask = 15;
-        juce::ToggleButton power;
+        ModulePower power { "Sequence power" };
         struct StepButton final : juce::TextButton
         {
             CycleLane* owner = nullptr;
@@ -66,8 +68,8 @@ namespace chordrunner::ui
             CycleLane& owner;
             bool dragging = false;
         } handle { *this };
-        melatonin::DropShadow cellGlow { { juce::Colour (0xff83dabb).withAlpha (0.35f), 6 },
-            { juce::Colour (0xff83dabb).withAlpha (0.3f), 2 } };
+        melatonin::DropShadow cellGlow { { accentYellow.withAlpha (0.35f), 6 },
+            { accentYellow.withAlpha (0.3f), 2 } };
         int cellStride = 1, cellTop = 27, rowStride = 30;
         int dragFrom = -1, dragTo = -1, dragRevision = -1, dragPattern = -1;
         bool bitDragging = false, gestureChanged = false;

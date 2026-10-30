@@ -92,7 +92,7 @@ TEST_CASE ("Four module combinations select the correct MIDI source", "[arp][pro
                 CHECK (notes == std::vector<int> { 40 });
                 REQUIRE (! readEvents (midi).empty());
                 CHECK (readEvents (midi)[0].sample == 12);
-                CHECK (readEvents (midi)[0].channel == 3);
+                CHECK (readEvents (midi)[0].channel == 1);
             }
             CHECK (audio.getMagnitude (0, 512) == 0.0f);
         }
@@ -110,8 +110,8 @@ TEST_CASE ("Input arpeggiation starts without sequencer Play and ends on key rel
     processor.processBlock (audio, midi);
     const auto events = readEvents (midi);
     REQUIRE (events.size() == 2);
-    CHECK (events[0] == ArpEvent { 27, 72, 5, 91, true });
-    CHECK (events[1] == ArpEvent { 311, 72, 5, 0, false });
+    CHECK (events[0] == ArpEvent { 27, 72, 1, 91, true });
+    CHECK (events[1] == ArpEvent { 311, 72, 1, 0, false });
 }
 
 TEST_CASE ("Arpeggiator styles, offset and transposition have defined note orders", "[arp]")
@@ -268,7 +268,7 @@ TEST_CASE ("Finite repeats and beat retrigger leave rests", "[arp]")
     CHECK (readEvents (output).back().sample == 24000);
 }
 
-TEST_CASE ("Velocity decay reaches target and optional note retrigger preserves its slope", "[arp]")
+TEST_CASE ("Velocity envelope always resets on note retrigger including legacy settings", "[arp]")
 {
     for (bool retrigger : { false, true })
     {
@@ -284,7 +284,7 @@ TEST_CASE ("Velocity decay reaches target and optional note retrigger preserves 
         engine.render (settings, input, output, 0, 120, 48000, 12001, true, false);
         const auto result = readEvents (output);
         REQUIRE (! result.empty());
-        CHECK (result.back().velocity == (retrigger ? 100 : 20));
+        CHECK (result.back().velocity == 100);
     }
 }
 
@@ -349,6 +349,44 @@ TEST_CASE ("Arpeggiator settings round trip, old sessions migrate and invalid ed
     CHECK_FALSE (static_cast<bool> (processor.getTimelineState()["arp"]["enabled"]));
 }
 
+TEST_CASE ("All channel voice output uses channel one in normal and bypass processing", "[arp][processor][channel]")
+{
+    for (const bool bypass : { false, true })
+    {
+        PluginProcessor processor;
+        configure (processor, false, false);
+        prepareArp (processor);
+        juce::AudioBuffer<float> audio (2, 512);
+        juce::MidiBuffer midi;
+        int sample = 0;
+        for (int channel = 1; channel <= 16; ++channel)
+            for (int status = 0x80; status < 0xf0; status += 0x10)
+            {
+                const std::array<juce::uint8, 3> bytes { static_cast<juce::uint8> (status | (channel - 1)), 60, 80 };
+                midi.addEvent (bytes.data(), status == 0xc0 || status == 0xd0 ? 2 : 3, sample++);
+            }
+        const std::array<juce::uint8, 5> sysex { 0xf0, 0x7d, 0x12, 0x34, 0xf7 };
+        midi.addEvent (sysex.data(), static_cast<int> (sysex.size()), sample++);
+        midi.addEvent (juce::MidiMessage::midiClock(), sample);
+        const auto input = midi;
+        if (bypass)
+            processor.processBlockBypassed (audio, midi);
+        else
+            processor.processBlock (audio, midi);
+        REQUIRE (midi.getNumEvents() == input.getNumEvents());
+        auto original = input.begin();
+        for (const auto event : midi)
+        {
+            const auto before = *original++;
+            CHECK (event.samplePosition == before.samplePosition);
+            REQUIRE (event.numBytes == before.numBytes);
+            CHECK (event.data[0] == (before.data[0] < 0xf0 ? (before.data[0] & 0xf0) : before.data[0]));
+            for (int byte = 1; byte < event.numBytes; ++byte)
+                CHECK (event.data[byte] == before.data[byte]);
+        }
+    }
+}
+
 TEST_CASE ("MIDI thru retains controller, SysEx and note timestamps; host bypass releases the arp", "[arp][processor]")
 {
     PluginProcessor processor;
@@ -369,7 +407,7 @@ TEST_CASE ("MIDI thru retains controller, SysEx and note timestamps; host bypass
     midi.clear();
     midi.addEvent (juce::MidiMessage::noteOn (4, 70, static_cast<juce::uint8> (90)), 17);
     processor.processBlockBypassed (audio, midi);
-    CHECK (readEvents (midi) == std::vector<ArpEvent> {{0,60,3,0,false}, {17,70,4,90,true}});
+    CHECK (readEvents (midi) == std::vector<ArpEvent> {{0,60,1,0,false}, {17,70,1,90,true}});
 }
 
 TEST_CASE ("Preroll starts an evenly spaced arpeggio without a catch-up burst", "[arp][timing]")
@@ -424,9 +462,8 @@ TEST_CASE ("Host seeks, loops, stops and channel edits release sequenced arpeggi
     midi.clear();
     head.position.setPpqPosition (512.0 / 24000.0);
     processor.processBlock (audio, midi);
-    REQUIRE (readEvents (midi).size() == 2);
-    CHECK (readEvents (midi)[0].channel == 1);
-    CHECK (readEvents (midi)[1].channel == 7);
+    CHECK (static_cast<int> (processor.getTimelineState()["channel"]) == 1);
+    CHECK (readEvents (midi).empty());
     midi.clear();
     head.position.setIsPlaying (false);
     processor.processBlock (audio, midi);
@@ -563,4 +600,32 @@ TEST_CASE ("Output pulse telemetry advances only on emitted arp attacks", "[arp]
     midi.addEvent (juce::MidiMessage::noteOn (1, 64, static_cast<juce::uint8> (80)), 0);
     processor.processBlock (audio, midi);
     CHECK (static_cast<juce::int64> (processor.getTransportState()["arpPulseSerial"]) == 1);
+}
+
+TEST_CASE ("Octave order supports complete phrases and interleaved notes", "[arp]")
+{
+    for (const int mode : { 0, 1 })
+    {
+        Arpeggiator engine;
+        ArpeggiatorSettings settings;
+        settings.steps = 1; settings.octaveMode = mode; settings.retrigger = 0;
+        settings.rate = 0.25;
+        juce::MidiBuffer input, output;
+        addChord (input);
+        engine.render (settings, input, output, 0, 120, 48000, 36000, true, false);
+        CHECK (noteOns (output) == (mode == 0 ? std::vector<int> { 60, 64, 67, 72, 76, 79 } : std::vector<int> { 60, 72, 64, 76, 67, 79 }));
+        CHECK (partitionedArp (127, settings) == partitionedArp (512, settings));
+    }
+    for (const int style : { ArpeggiatorSettings::random, ArpeggiatorSettings::randomOther, ArpeggiatorSettings::randomOnce })
+    {
+        Arpeggiator engine;
+        ArpeggiatorSettings settings;
+        settings.steps = 1; settings.octaveMode = 1; settings.style = style; settings.retrigger = 0;
+        juce::MidiBuffer input, output;
+        addChord (input);
+        engine.render (settings, input, output, 0, 120, 48000, 36000, true, false);
+        const auto notes = noteOns (output);
+        REQUIRE (notes.size() == 6);
+        for (size_t i = 0; i < notes.size(); i += 2) CHECK (notes[i + 1] == notes[i] + 12);
+    }
 }

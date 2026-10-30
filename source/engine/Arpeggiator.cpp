@@ -42,6 +42,7 @@ void Arpeggiator::stop (juce::MidiBuffer& output, int sample, bool clearKeys)
 void Arpeggiator::restart (bool velocity)
 {
     step = 0;
+    randomOctaveGroup = ~juce::uint64 { 0 };
     pendingCount = 0;
     next = nominalNext = clock;
     if (velocity)
@@ -50,6 +51,7 @@ void Arpeggiator::restart (bool velocity)
 
 void Arpeggiator::rebuild()
 {
+    randomOctaveGroup = ~juce::uint64 { 0 };
     orderCount = keyCount;
     for (int i = 0; i < keyCount; ++i)
         order[static_cast<size_t> (i)] = i;
@@ -128,7 +130,7 @@ void Arpeggiator::emit (const Key& key, int transpose, const ArpeggiatorSettings
     if (settings.velocityEnabled)
     {
         const auto fraction = juce::jlimit (0.0, 1.0, (clock - velocityStart) / (sampleRate * settings.decay / 1000.0));
-        velocity = juce::roundToInt (key.velocity + (settings.target - key.velocity) * fraction);
+        velocity = juce::roundToInt (key.velocity + (settings.target - key.velocity) * fraction * settings.strength / 100.0);
     }
     if (settings.velocityHumanize > 0 && velocity > 0)
         velocity = juce::jlimit (1, 127, juce::roundToInt (velocity + (grooveRandom() * 2.0 - 1.0)
@@ -294,10 +296,7 @@ void Arpeggiator::render (const ArpeggiatorSettings& settings, const juce::MidiB
             // Release tails from removed source notes before any replacement chord.
             else if (newNote && settings.retrigger == 1)
             {
-                const auto previousVelocityStart = velocityStart;
                 stop (sampleMidi, sample, false);
-                if (! settings.velocityRetrigger)
-                    velocityStart = previousVelocityStart;
             }
             if (orderCount == 0 && keyCount > 0)
                 restart (true);
@@ -316,7 +315,7 @@ void Arpeggiator::render (const ArpeggiatorSettings& settings, const juce::MidiB
             const auto bucket = static_cast<juce::int64> (std::floor ((currentBeat + 1.0e-9) / settings.interval));
             if (bucket != retriggerBucket)
             {
-                restart (settings.velocityRetrigger);
+                restart (true);
                 retriggerBucket = bucket;
             }
         }
@@ -377,8 +376,9 @@ void Arpeggiator::render (const ArpeggiatorSettings& settings, const juce::MidiB
             continue;
         }
         const int position = static_cast<int> ((step + static_cast<juce::uint64> (settings.offset)) % static_cast<juce::uint64> (length));
-        const int transpose = position / baseLength * settings.distance;
-        int index = position % baseLength;
+        const int octaves = settings.steps + 1;
+        const int transpose = (settings.octaveMode == 1 ? position % octaves : position / baseLength) * settings.distance;
+        int index = settings.octaveMode == 1 ? position / octaves : position % baseLength;
         switch (settings.style)
         {
             case ArpeggiatorSettings::down: index = keyCount - 1 - index; break;
@@ -391,10 +391,20 @@ void Arpeggiator::render (const ArpeggiatorSettings& settings, const juce::MidiB
                 index = reverse % 2 == 0 ? reverse / 2 : keyCount - 1 - reverse / 2;
                 break;
             }
-            case ArpeggiatorSettings::random: index = static_cast<int> (randomNumber() % static_cast<unsigned> (keyCount)); break;
+            case ArpeggiatorSettings::random:
+            {
+                const auto group = (step + static_cast<juce::uint64> (settings.offset)) / static_cast<juce::uint64> (octaves);
+                if (settings.octaveMode == 0 || group != randomOctaveGroup)
+                {
+                    randomOctaveIndex = static_cast<int> (randomNumber() % static_cast<unsigned> (keyCount));
+                    randomOctaveGroup = group;
+                }
+                index = randomOctaveIndex;
+                break;
+            }
             default: break;
         }
-        if (settings.style == ArpeggiatorSettings::randomOther && step > 0 && step % static_cast<juce::uint64> (keyCount) == 0)
+        if (settings.style == ArpeggiatorSettings::randomOther && step > 0 && (settings.octaveMode == 1 ? position % octaves == 0 && (position / octaves) % keyCount == 0 : step % static_cast<juce::uint64> (keyCount) == 0))
             for (int i = keyCount - 1; i > 0; --i)
                 std::swap (shuffle[static_cast<size_t> (i)], shuffle[randomNumber() % static_cast<unsigned> (i + 1)]);
         rhythmContinuation = voiceCount > 0 || pendingCount > 0;

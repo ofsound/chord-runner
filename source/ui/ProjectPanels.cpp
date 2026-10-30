@@ -25,7 +25,7 @@ public:
         description.setInputRestrictions (4096);
         dates.setText ("Created  " + state["createdAt"].toString().substring (0, 10)
             + "    /    Modified  " + state["modifiedAt"].toString().substring (0, 10), juce::dontSendNotification);
-        dates.setFont (juce::FontOptions (11.0f));
+        dates.setFont (uiFont (11.0f));
         done.onClick = [this]
         {
             target.setProjectMetadata (name.getText(), author.getText(), description.getText());
@@ -92,28 +92,4 @@ void NativeEditor::showProjectMenu()
         });
 }
 
-void NativeEditor::showPatternMenu()
-{
-    const int slot = controller.processor.selectedPattern();
-    juce::PopupMenu menu, copies;
-    for (int i = 0; i < 16; ++i)
-        copies.addItem (100 + i, juce::String (i + 1) + "   " + bankState["patterns"][i]["name"].toString(), i != slot && slot >= 0);
-    menu.addItem (1, "Rename pattern...", slot >= 0);
-    menu.addSubMenu ("Copy to", copies, slot >= 0);
-    menu.addItem (2, "Reset pattern", slot >= 0);
-    menu.addSeparator();
-    menu.addItem (3, "Chord glossary...");
-    menu.addSectionHeader ("MIDI: C0-D#1 = 1-16; E1 = Mute");
-    menu.showMenuAsync (juce::PopupMenu::Options().withTargetComponent (&patternMenu),
-        [safe = juce::Component::SafePointer<NativeEditor> (this), slot] (int result)
-        {
-            if (safe == nullptr || result == 0) return;
-            if (result == 1) safe->patternName.showEditor();
-            else if (result == 2) safe->controller.processor.clearPattern (slot);
-            else if (result == 3) safe->showGlossary();
-            else if (result >= 100 && (! safe->controller.dirty() || safe->controller.applyDraft()))
-                safe->controller.processor.copyPattern (slot, result - 100);
-            safe->controller.refresh (result == 2);
-        });
-}
 }

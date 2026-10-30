@@ -54,6 +54,8 @@ public:
     bool canUndo() const { const juce::ScopedLock lock (stateLock); return ! undoStates.empty(); }
     bool canRedo() const { const juce::ScopedLock lock (stateLock); return ! redoStates.empty(); }
     juce::Result editChordTone (int chord, int tone, int pitch, int expectedRevision);
+    juce::Result editNotes (const std::vector<chordrunner::NoteEdit>&, int expectedRevision);
+    juce::Result resizeLoop (double beats, int expectedRevision);
     void beginEditGesture() { const juce::ScopedLock lock (stateLock); lastTransaction.clear(); editGestureActive = true; }
     void endEditGesture() { const juce::ScopedLock lock (stateLock); lastTransaction.clear(); editGestureActive = false; }
     void undo();
@@ -70,6 +72,8 @@ public:
     std::shared_ptr<chordrunner::IOSProjectLibrary> getIOSProjectLibrary() { return iosLibrary; }
    #endif
     void setProjectFile (const juce::File& file) { const juce::ScopedLock lock (stateLock); projectFile = file; }
+    double lastMidiInputTime() const { return midiInputTime.load (std::memory_order_relaxed); }
+    double lastMidiOutputTime() const { return midiOutputTime.load (std::memory_order_relaxed); }
     bool isStandalone() const { return wrapperType == wrapperType_Standalone; }
 
 private:
@@ -104,7 +108,9 @@ private:
     std::array<bool, 16 * 128> passedNotes {};
     std::array<bool, 16 * 128> inputKeysDown {}; // Audio-thread owned, no UI access.
     int inputKeyCount = 0;
+    std::atomic<double> midiInputTime { -1000.0 }, midiOutputTime { -1000.0 };
     std::atomic<int> heldInputStatus { 0 };
+    std::atomic<int> arpInputCount { 0 };
     std::atomic<juce::uint64> arpPulseSerial { 0 }, arpPulseStep { 0 }, arpPulseRhythmStep { 0 };
     std::atomic<int> arpPulseVelocity { 0 };
     std::atomic<double> arpPulseAge { 1000 }, arpPulseDueMs { 0 };

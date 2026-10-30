@@ -9,14 +9,16 @@ struct ArpeggiatorSettings
 {
     enum Style { up, down, upDown, downUp, converge, diverge, playOrder, chordTrigger, random, randomOther, randomOnce };
     bool enabled = false, sync = true, hold = false, velocityEnabled = false, velocityRetrigger = true;
+    int octaveMode = 0; // 0: complete phrase per octave; 1: octaves of each note.
     int style = up, steps = 0, distance = 12, offset = 0, retrigger = 1, repeats = 0, target = 64;
     bool gateSequenceEnabled = false, tieSequenceEnabled = false;
-    int gateLength = 4, tieLength = 4, gateMask = 15, tieMask = 15;
+    int gateLength = 4, tieLength = 4, gateMask = 15, tieMask = 0;
     int swingSubdivision = 1, velocityHumanize = 0, timingHumanize = 0;
+    double strength = 100.0;
     double rate = 0.25, freeMs = 100.0, gate = 100.0, swing = 0.0, interval = 4.0, decay = 1000.0;
     bool operator== (const ArpeggiatorSettings& other) const
     {
-        return gateSequenceEnabled == other.gateSequenceEnabled && tieSequenceEnabled == other.tieSequenceEnabled
+        return octaveMode == other.octaveMode && gateSequenceEnabled == other.gateSequenceEnabled && tieSequenceEnabled == other.tieSequenceEnabled
             && gateLength == other.gateLength && tieLength == other.tieLength
             && gateMask == other.gateMask && tieMask == other.tieMask
             && swingSubdivision == other.swingSubdivision
@@ -25,6 +27,7 @@ struct ArpeggiatorSettings
             && enabled == other.enabled
             && sync == other.sync
             && hold == other.hold
+            && std::abs (strength - other.strength) < 1.0e-12
             && velocityEnabled == other.velocityEnabled
             && velocityRetrigger == other.velocityRetrigger
             && style == other.style
@@ -51,6 +54,7 @@ public:
     void render (const ArpeggiatorSettings&, const juce::MidiBuffer& input, juce::MidiBuffer& output,
                  double beat, double bpm, double sampleRate, int samples, bool running, bool changed);
     void stop (juce::MidiBuffer&, int sample = 0, bool clearKeys = true);
+    int inputNoteCount() const { return keyCount; }
     juce::uint64 triggerSerial() const { return emittedSerial; }
     juce::uint64 triggerStep() const { return emittedStep; }
     juce::uint64 triggerRhythmStep() const { return emittedRhythmStep; }
@@ -78,6 +82,8 @@ private:
     juce::uint64 emittedSerial = 0, emittedStep = 0, emittedRhythmStep = 0;
     int emittedVelocity = 0;
     double emittedClock = 0;
+    juce::uint64 randomOctaveGroup = ~juce::uint64 { 0 };
+    int randomOctaveIndex = 0;
     unsigned randomNumber();
     juce::uint32 grooveSeed = 0x92d68ca2u;
     double grooveRandom();

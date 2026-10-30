@@ -4,20 +4,18 @@ namespace chordrunner::ui
 {
     namespace
     {
-        const juce::Colour ink (0xffe9ecee), muted (0xff929da8), mint (0xff83dabb), gold (accentYellow);
+        const juce::Colour ink (0xffe9ecee), muted (0xff929da8), mint (accentGreen), gold (accentYellow);
         juce::Colour velocityColour (int velocity)
         {
             const float amount = juce::jlimit (0.0f, 1.0f, static_cast<float> (velocity) / 127.0f);
             return accentYellow.withMultipliedBrightness (0.06f + 0.94f * std::pow (amount, 1.25f));
         }
-        const juce::StringArray styles { "Up", "Down", "Up & Down", "Down & Up", "Converge", "Diverge", "Play order", "Chord trigger", "Random", "Random other", "Random once" };
     }
     ArpVisualizer::ArpVisualizer()
     {
         setComponentID ("arp.visualizer");
         inspection.setColour (juce::Label::textColourId, muted);
-        inspection.setFont (juce::FontOptions (11.0f));
-        addAndMakeVisible (inspection);
+        inspection.setFont (uiFont (11.0f));
         inspection.setText ("Height = relative pitch / width = gate / dim = soft / bright = hard / dotted ticks = straight timing", juce::dontSendNotification);
     }
     void ArpVisualizer::showOutputPulse (juce::uint64 serial, juce::uint64 ordinal, int velocity, double ageMs, juce::uint64 rhythmOrdinal)
@@ -134,7 +132,7 @@ namespace chordrunner::ui
         const auto repeats = settings.repeats == 0 ? juce::String ("Repeats forever")
                                                    : juce::String (settings.repeats) + " cycles then waits";
         const auto envelope = settings.velocityEnabled && getWidth() >= 800
-                                  ? (settings.velocityRetrigger ? " / Retrigger resets velocity" : " / Retrigger preserves velocity")
+                                  ? " / Phrase restart resets velocity"
                                   : "";
         return restart + " / " + repeats + " / "
                + (settings.hold ? "Hold latches input" : "Hold off follows releases") + envelope;
@@ -142,73 +140,25 @@ namespace chordrunner::ui
 
     void ArpVisualizer::resized()
     {
-        const bool compact = getHeight() < 270;
-        const float top = compact ? 70.0f : 112.0f;
-        const float footer = compact ? 78.0f : 136.0f;
-        plot = { 58.0f, top, static_cast<float> (getWidth() - 78), juce::jmax (24.0f, static_cast<float> (getHeight()) - top - footer) };
-        timing = { plot.getX(), plot.getBottom() + 12, plot.getWidth(), compact ? 14.0f : 24.0f };
-        velocities = { plot.getX(), timing.getBottom() + 8, plot.getWidth(), compact ? 15.0f : 30.0f };
-        inspection.setBounds (12, getHeight() - 24, getWidth() - 24, 20);
+        plot = { 20.0f, 32.0f, static_cast<float> (getWidth() - 40), juce::jmax (24.0f, static_cast<float> (getHeight()) - 46.0f) };
     }
     juce::Rectangle<float> ArpVisualizer::noteBounds (const PreviewNote& note) const
     {
         const float h = juce::jlimit (4.0f, 14.0f, plot.getHeight() / static_cast<float> (high - low + 4) * 2.0f);
-        const float y = plot.getBottom() - 10 - (high > low ? static_cast<float> (note.note - low) / static_cast<float> (high - low) : 0.5f) * (plot.getHeight() - 20);
+        // Reserve two note-heights of breathing room on each edge, scaling down for compact views.
+        const float padding = juce::jmin (plot.getHeight() * 0.25f, juce::jmax (h * 2.5f, plot.getHeight() * 0.1f));
+        const float y = plot.getBottom() - padding - (high > low ? static_cast<float> (note.note - low) / static_cast<float> (high - low) : 0.5f) * (plot.getHeight() - padding * 2.0f);
         return { plot.getX() + static_cast<float> (note.start / beats) * plot.getWidth(), y - h * 0.5f, juce::jmax (2.0f, static_cast<float> ((note.end - note.start) / beats) * plot.getWidth() - 2), h };
     }
     void ArpVisualizer::paint (juce::Graphics& g)
     {
-        const bool compact = getHeight() < 270, narrow = getWidth() < 600;
         g.setColour (juce::Colour (0xff131c21));
         g.fillRoundedRectangle (getLocalBounds().toFloat(), 8);
         g.setColour (juce::Colour (0xff34434a));
         g.drawRoundedRectangle (getLocalBounds().toFloat().reduced (0.5f), 8, 1);
-        g.setFont (juce::FontOptions (13.0f, juce::Font::bold));
-        g.setColour (mint);
-        g.setColour (mint.withAlpha (0.15f + pulse * 0.85f));
-        g.fillEllipse (18, 18, 6, 6);
-        g.setFont (juce::FontOptions (10.0f)); g.setColour (muted);
-        g.drawText ("MIDI OUT", 30, 11, 70, 20, juce::Justification::left);
-        g.setFont (juce::FontOptions (11.0f));
-        g.setColour (muted);
-        g.drawText (timeText (beats) + (settings.retrigger == 2 && beats > settings.interval ? " shown" : ""), getWidth() - 126, 10, 110, 24, juce::Justification::centredRight);
-        juce::String relationship;
-        if (settings.retrigger == 2)
-        {
-            if (settings.repeats > 0 && naturalBeats * settings.repeats < settings.interval)
-                relationship = juce::String (settings.repeats) + (settings.repeats == 1 ? " cycle + rest" : " cycles + rest");
-            else if (settings.interval < naturalBeats)
-                relationship = "Restart interrupts cycle";
-            else
-            {
-                const double cycles = settings.interval / naturalBeats;
-                relationship = juce::String (cycles, std::abs (cycles - std::round (cycles)) < 1.0e-6 ? 0 : 2)
-                               + (std::abs (cycles - 1.0) < 1.0e-6 ? " cycle per restart" : " cycles per restart");
-            }
-        }
-        const auto source = heldCount > 0 ? juce::String (heldCount) + (narrow ? " held" : heldCount == 1 ? " held note"
-                                                                                                          : " held notes")
-                                          : juce::String (narrow ? "4-note demo" : "4-note example (no input)");
-        const auto context = source + " / cycle " + timeText (naturalBeats)
-                             + (relationship.isEmpty() ? juce::String() : " / " + relationship)
-            + (settings.retrigger == 2 && beats > settings.interval ? " / restart every " + timeText (settings.interval) : "");
-        g.drawText ((narrow ? juce::String() : styles[settings.style] + " / ") + context,
-            16,
-            34,
-            getWidth() - 32,
-            18,
-            juce::Justification::left);
-        if (!compact)
-        {
-            g.drawText ("RELATIVE PITCH + GATE", 58, 61, 200, 16, juce::Justification::left);
-            if (!narrow)
-                g.drawText ("Dotted grid = straight rate / attack velocity starts at 100", 280, 61, getWidth() - 300, 16, juce::Justification::right);
-        }
         const auto xAt = [this] (double at) { return plot.getX() + static_cast<float> (at / beats) * plot.getWidth(); };
         g.setColour (muted.withAlpha (0.6f));
-        g.setFont (juce::FontOptions (10.0f));
-        g.drawText ("HIGH", 8, static_cast<int> (plot.getY()), 42, 14, juce::Justification::centredRight);
-        g.drawText ("LOW", 8, static_cast<int> (plot.getBottom()) - 14, 42, 14, juce::Justification::centredRight);
+        g.setFont (uiFont (10.0f));
         // Sparse relative guides replace the literal chromatic piano-roll grid.
         for (int row = 0; row < 4; ++row)
         {
@@ -227,7 +177,7 @@ namespace chordrunner::ui
                                                : normalized <= 5   ? 5
                                                                    : 10)
                             * magnitude;
-        g.setFont (juce::FontOptions (10.0f));
+        g.setFont (uiFont (10.0f));
         for (double unit = 0; unit < unitSpan - tick * 0.2; unit += tick)
         {
             if (unit > 0 && xAt (unit / unitsPerBeat) > plot.getRight() - 110)
@@ -247,7 +197,7 @@ namespace chordrunner::ui
             const float x = xAt (at);
             g.setColour (ink.withAlpha (0.1f));
             const float dash[] { 1, 5 };
-            g.drawDashedLine ({ x, plot.getY(), x, timing.getBottom() }, dash, 2);
+            g.drawDashedLine ({ x, plot.getY(), x, plot.getBottom() }, dash, 2);
         }
         // Ordinary order-cycle wraps preserve the velocity envelope and rhythm.
         // Yellow marks the beat restart, so these are deliberately mint.
@@ -261,19 +211,19 @@ namespace chordrunner::ui
                 const float x = xAt (at);
                 g.setColour (mint.withAlpha (0.3f));
                 const float dash[] { 4, 5 };
-                g.drawDashedLine ({ x, plot.getY(), x, velocities.getBottom() }, dash, 2);
+                g.drawDashedLine ({ x, plot.getY(), x, plot.getBottom() }, dash, 2);
             }
             if (settings.retrigger == 2 && base > 0)
             {
                 g.setColour (gold.withAlpha (0.65f));
                 const float dash[] { 3, 4 };
-                g.drawDashedLine ({ xAt (base), plot.getY(), xAt (base), velocities.getBottom() }, dash, 2);
+                g.drawDashedLine ({ xAt (base), plot.getY(), xAt (base), plot.getBottom() }, dash, 2);
             }
             const double repeatEnd = base + naturalBeats * settings.repeats;
             if (settings.repeats > 0 && repeatEnd < end)
             {
                 g.setColour (ink.withAlpha (0.025f));
-                g.fillRect (xAt (repeatEnd), plot.getY(), xAt (end) - xAt (repeatEnd), velocities.getBottom() - plot.getY());
+                g.fillRect (xAt (repeatEnd), plot.getY(), xAt (end) - xAt (repeatEnd), plot.getBottom() - plot.getY());
                 if (xAt (end) - xAt (repeatEnd) > 120)
                 {
                     g.setColour (muted);
@@ -282,44 +232,15 @@ namespace chordrunner::ui
                 }
             }
         }
-        // Gate-off slots remain visible as rests, even when the entire cycle is silent.
-        if (settings.gateSequenceEnabled)
-            for (int i = 0; i < static_cast<int> (std::ceil (visibleSteps)); ++i)
-            {
-                if ((settings.gateMask & (1 << (i % settings.gateLength))) != 0) continue;
-                const float left = xAt (i * stepBeats), right = xAt (juce::jmin (beats, (i + 1) * stepBeats));
-                if (right - left < 7) continue;
-                g.setColour (muted.withAlpha (0.04f));
-                g.fillRect (left, plot.getY(), right - left, plot.getHeight());
-                const float x = (left + right) * 0.5f, y = timing.getCentreY();
-                g.setColour (muted.withAlpha (0.7f));
-                g.drawLine (x - 3, y - 3, x + 3, y + 3, 1);
-                g.drawLine (x - 3, y + 3, x + 3, y - 3, 1);
-                if (! compact && right - left > 36)
-                    g.drawText ("REST", static_cast<int> (left), static_cast<int> (plot.getCentreY()), static_cast<int> (right - left), 16, juce::Justification::centred);
-            }
-        juce::Path contour;
         std::array<juce::Path, 4> silhouettes;
-        bool first = true;
-        int previousCycle = -1;
         for (const auto& note : notes)
         {
             const auto r = noteBounds (note);
             silhouettes[static_cast<size_t> (juce::jmin (3, note.velocity / 32))].addRoundedRectangle (r, 3);
-            const int cycle = static_cast<int> (note.start / naturalBeats);
-            if (first || cycle != previousCycle)
-            {
-                contour.startNewSubPath (r.getX(), r.getCentreY());
-                first = false;
-            }
-            else
-                contour.lineTo (r.getX(), r.getCentreY());
-            previousCycle = cycle;
+
         }
         g.saveState();
         g.reduceClipRegion (plot.expanded (0, 6).toNearestInt());
-        g.setColour (mint.withAlpha (0.16f));
-        g.strokePath (contour, juce::PathStrokeType (1.3f));
         if (notes.size() <= 512)
             for (size_t i = 0; i < noteGlows.size(); ++i)
                 if (! silhouettes[i].isEmpty()) noteGlows[i].render (g, silhouettes[i]);
@@ -347,7 +268,7 @@ namespace chordrunner::ui
                 }
                 if (joined && r.getWidth() > 42 && r.getHeight() >= 10)
                 {
-                    g.setFont (juce::FontOptions (9.0f));
+                    g.setFont (uiFont (9.0f));
                     g.setColour (juce::Colour (0xff101820));
                     g.drawText ("TIE", r.toNearestInt(), juce::Justification::centred);
                 }
@@ -376,37 +297,9 @@ namespace chordrunner::ui
             g.drawRoundedRectangle (noteBounds (notes[static_cast<size_t> (hovered)]).expanded (1), 3, 1);
         }
         g.restoreState();
-        g.setFont (juce::FontOptions (10.0f));
-        g.setColour (muted);
-        g.drawText ("TIME", 8, static_cast<int> (timing.getY()), 42, 14, juce::Justification::centredRight);
-        g.drawText ("VEL", 8, static_cast<int> (velocities.getY()), 42, 14, juce::Justification::centredRight);
-        // Actual onset strokes can be compared with the dotted straight grid above.
-        // No nearest-grid mapping is assumed: swing can move whole groups.
-        for (const auto& note : notes)
-        {
-            const float x = xAt (note.start);
-            g.setColour (mint.withAlpha (0.4f));
-            g.drawLine (x, timing.getY(), x, timing.getCentreY(), 1);
-            g.fillRoundedRectangle (x, timing.getCentreY(), juce::jmax (2.0f, noteBounds (note).getWidth()), 3, 1);
-            const float y = velocities.getBottom() - static_cast<float> (note.velocity) / 127 * velocities.getHeight();
-            g.setColour (velocityColour (note.velocity).withAlpha (0.85f));
-            g.fillRect (x, y, 2.0f, velocities.getBottom() - y);
-            g.drawLine (x, y, xAt (note.end), y, 1.5f);
-        }
         g.setColour (settings.retrigger == 2 ? gold : mint);
         const float dash[] { 3, 4 };
-        g.drawDashedLine ({ plot.getRight(), plot.getY(), plot.getRight(), velocities.getBottom() }, dash, 2);
-        if (!compact)
-        {
-            g.setColour (muted);
-            g.setFont (juce::FontOptions (11.0f));
-            const auto end = settings.retrigger != 2 ? (settings.repeats == 0 ? juce::String ("Order cycle wraps / envelope continues") : juce::String ("Order cycle complete / finite repeat limit applies"))
-                             : settings.interval < naturalBeats  ? juce::String ("Beat restart interrupts the order cycle")
-                                                     : "Restart every " + timeText (settings.interval) + " / order cycle " + timeText (naturalBeats);
-            g.drawText (end, 58, static_cast<int> (velocities.getBottom()) + 7, getWidth() - 78, 16, juce::Justification::right);
-            if (!narrow)
-                g.drawText ("Height: relative pitch    Width: visible gate / tie    Dotted: straight timing    Color: dim = soft / bright = hard    X: gate rest    Dots: ties", 58, static_cast<int> (velocities.getBottom()) + 25, getWidth() - 78, 16, juce::Justification::left);
-        }
+        g.drawDashedLine ({ plot.getRight(), plot.getY(), plot.getRight(), plot.getBottom() }, dash, 2);
         if (notes.empty())
         {
             g.setColour (muted);

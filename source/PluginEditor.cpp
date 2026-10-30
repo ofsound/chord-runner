@@ -18,12 +18,12 @@ PluginEditor::PluginEditor (PluginProcessor& p) : AudioProcessorEditor (&p), pro
    #if JUCE_IOS
     setResizeLimits (280, 240, 2560, 2560);
     if (const auto* display = juce::Desktop::getInstance().getDisplays().getPrimaryDisplay())
-        setSize (juce::jmin (1120, juce::roundToInt (display->userBounds.getWidth())), juce::jmin (900, juce::roundToInt (display->userBounds.getHeight())));
+        setSize (juce::jmin (1120, juce::roundToInt (display->userBounds.getWidth())), juce::jmin (840, juce::roundToInt (display->userBounds.getHeight())));
     else
         setSize (390, 700);
    #else
     setResizeLimits (760, 540, 2560, 1600);
-    setSize (1120, 800);
+    setSize (1120, 840); // 4:3 landscape canvas shared with the tablet layout.
    #endif
 }
 

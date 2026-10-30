@@ -41,6 +41,8 @@ bool EditorController::applyDraft()
 {
     auto next = processor.getTimelineState();
     next.getDynamicObject()->setProperty ("progression", draft);
+    next.getDynamicObject()->removeProperty ("noteTiming");
+    next.getDynamicObject()->removeProperty ("loopBeats");
     next.getDynamicObject()->removeProperty ("toneOffsets");
     return commit (next, true);
 }

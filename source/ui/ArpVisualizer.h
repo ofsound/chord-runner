@@ -22,6 +22,8 @@ namespace chordrunner::ui
         const std::vector<PreviewNote>& previewNotes() const { return notes; }
         double windowBeats() const { return beats; }
         double orderCycleBeats() const { return naturalBeats; }
+        juce::String statusText() const { return inspection.getText(); }
+        float outputPulse() const { return pulse; }
         int inputRanks() const { return rankCount; }
 
     private:
@@ -41,7 +43,7 @@ namespace chordrunner::ui
         juce::Label inspection;
         std::vector<PreviewNote> notes;
         std::vector<bool> reachesWindowEdge;
-        juce::Rectangle<float> plot, timing, velocities;
+        juce::Rectangle<float> plot;
         void rebuild();
         juce::Rectangle<float> noteBounds (const PreviewNote&) const;
         juce::String description() const;

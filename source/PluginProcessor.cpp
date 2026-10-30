@@ -242,6 +242,7 @@ void PluginProcessor::processBlock (juce::AudioBuffer<float>& audio, juce::MidiB
     arpPulseStep.store (arpeggiator.triggerStep(), std::memory_order_relaxed);
     arpPulseVelocity.store (arpeggiator.triggerVelocity(), std::memory_order_relaxed);
     arpPulseAge.store (arpeggiator.triggerAgeMs (getSampleRate()), std::memory_order_relaxed);
+    arpInputCount.store (arpeggiator.inputNoteCount(), std::memory_order_relaxed);
     arpPulseSerial.store (arpeggiator.triggerSerial(), std::memory_order_release);
     finishMidiBlock (midi);
     playingStatus.store (playing, std::memory_order_relaxed);
@@ -275,6 +276,8 @@ void PluginProcessor::processBlockBypassed (juce::AudioBuffer<float>& audio, juc
 
 void PluginProcessor::trackInputKeys (const juce::MidiBuffer& input, int samples, bool clear)
 {
+    if (! input.isEmpty())
+        midiInputTime.store (juce::Time::getMillisecondCounterHiRes(), std::memory_order_relaxed);
     if (clear || input.data.size() > maxInputBytes)
     {
         inputKeysDown.fill (false);
@@ -347,6 +350,14 @@ void PluginProcessor::passMidi (const juce::MidiBuffer& input, juce::MidiBuffer&
 
 void PluginProcessor::finishMidiBlock (juce::MidiBuffer& midi)
 {
+    // Rewrite channel-voice statuses in place, retaining timestamps and buffer storage.
+    // System messages (including SysEx and realtime clock) have no channel.
+    auto* bytes = outgoingMidi.data.begin();
+    for (const auto event : outgoingMidi)
+        if (event.numBytes > 0 && event.data[0] >= 0x80 && event.data[0] < 0xf0)
+            bytes[event.data - bytes] = static_cast<juce::uint8> (event.data[0] & 0xf0);
+    if (! outgoingMidi.isEmpty())
+        midiOutputTime.store (juce::Time::getMillisecondCounterHiRes(), std::memory_order_relaxed);
     midi.swapWith (outgoingMidi);
     if (primeMidiBuffer)
     {
@@ -381,6 +392,7 @@ juce::var PluginProcessor::getTransportState() const
     object->setProperty ("arpPulseVelocity", arpPulseVelocity.load (std::memory_order_relaxed));
     object->setProperty ("arpPulseSampleAgeMs", arpPulseAge.load (std::memory_order_relaxed));
     object->setProperty ("arpPulseAgeMs", juce::Time::getMillisecondCounterHiRes() - arpPulseDueMs.load (std::memory_order_relaxed));
+    object->setProperty ("arpInputNotes", resetRequested.load (std::memory_order_acquire) ? 0 : arpInputCount.load (std::memory_order_relaxed));
     object->setProperty ("heldInputNotes", resetRequested.load (std::memory_order_acquire) ? 0 : heldInputStatus.load (std::memory_order_relaxed));
     object->setProperty ("hostAvailable", hostAvailable.load());
     object->setProperty ("standalone", isStandalone());

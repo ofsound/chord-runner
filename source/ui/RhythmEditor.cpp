@@ -4,7 +4,7 @@ namespace chordrunner::ui
 {
     namespace
     {
-        const juce::Colour accent (0xff83dabb), ink (0xffe9ecee), muted (0xff94a4ae);
+        const juce::Colour accent (accentYellow), muted (0xff94a4ae);
     }
     void CycleLane::StepButton::paintButton (juce::Graphics& g, bool hover, bool down)
     {
@@ -15,20 +15,20 @@ namespace chordrunner::ui
         auto fill = on ? accent : inCycle ? juce::Colour (0xff233138)
                                           : juce::Colour (0xff10171b);
         if (flashing)
-            fill = ink;
+            fill = accent.brighter (0.25f);
         if (isEnabled() && (hover || down))
             fill = fill.brighter (0.12f);
         g.setColour (fill.withMultipliedAlpha (isEnabled() ? 1.0f : 0.4f));
         g.fillRoundedRectangle (r, 3);
         g.setColour ((on ? accent.brighter (0.2f) : juce::Colour (0xff41525b)).withAlpha (inCycle ? 0.5f : 0.2f));
         g.drawRoundedRectangle (r, 3, 0.8f);
-        auto font = juce::Font (juce::FontOptions (13.0f, juce::Font::bold));
+        auto font = juce::Font (uiFont (13.0f, juce::Font::bold));
         const float available = static_cast<float> (juce::jmax (1, getWidth() - 4));
         const float width = juce::GlyphArrangement::getStringWidth (font, getButtonText());
         if (width > available)
             font.setHeight (font.getHeight() * available / width);
         g.setFont (font);
-        g.setColour ((on || flashing ? juce::Colour (0xff112322) : inCycle ? muted
+        g.setColour ((on || flashing ? juce::Colour (0xff242012) : inCycle ? muted
                                                                            : muted.withAlpha (0.35f))
                 .withMultipliedAlpha (isEnabled() ? 1.0f : 0.4f));
         g.drawText (getButtonText(), getLocalBounds().reduced (2, 1), juce::Justification::centred, false);
@@ -77,9 +77,13 @@ namespace chordrunner::ui
     }
     CycleLane::CycleLane (EditorController& c, bool ties) : controller (c), tieLane (ties)
     {
+        mask = ties ? 0 : 15;
         setComponentID (ties ? "rhythm.tie" : "rhythm.gate");
         power.setComponentID (getComponentID() + ".enabled");
-        power.setButtonText (ties ? "TIE SEQUENCE" : "GATE SEQUENCE");
+        power.setButtonText (ties ? "Tie sequence power" : "Gate sequence power");
+        power.setTooltip (power.getButtonText());
+        power.setClickingTogglesState (true);
+        power.setFaceDiameter (18.0f);
         addAndMakeVisible (power);
         addAndMakeVisible (handle);
         handle.setComponentID (getComponentID() + ".length");
@@ -247,6 +251,9 @@ namespace chordrunner::ui
             g.setColour (juce::Colour (0xff151e23));
             g.fillRoundedRectangle (getLocalBounds().toFloat(), 6);
         }
+        g.setColour (accentGreen.withAlpha (isEnabled() ? 1.0f : 0.4f));
+        g.setFont (uiFont (sectionHeadingSize, juce::Font::bold));
+        g.drawText (tieLane ? "TIE SEQUENCE" : "GATE SEQUENCE", 44, 5, getWidth() - 52, 36, juce::Justification::centredLeft);
         const float alpha = (isEnabled() ? 1.0f : 0.35f) * (power.getToggleState() ? 1.0f : 0.5f);
         juce::Path lit;
         for (int row = 0; row < 16 / columns(); ++row)
@@ -276,10 +283,10 @@ namespace chordrunner::ui
         const int count = columns();
         const int rows = 16 / count;
         cellStride = juce::jmax (1, (getWidth() - 20) / count);
-        cellTop = inlineLane ? 27 : 32;
-        rowStride = inlineLane ? juce::jmax (20, juce::jmin (32, (getHeight() - 30) / rows))
-                               : juce::jmax (20, juce::jmin (48, (getHeight() - 58) / rows));
-        power.setBounds (4, 0, getWidth() - 8, inlineLane ? 24 : 30);
+        cellTop = inlineLane ? 47 : 46;
+        rowStride = inlineLane ? juce::jmax (20, juce::jmin (32, (getHeight() - 50) / rows))
+                               : juce::jmax (20, juce::jmin (48, (getHeight() - 66) / rows));
+        power.setBounds (4, 5, 36, 36);
         for (int i = 0; i < 16; ++i)
             cells[static_cast<size_t> (i)].setBounds (10 + i % count * cellStride, cellTop + i / count * rowStride, cellStride - 4, rowStride - 3);
         const auto end = cells[static_cast<size_t> (length - 1)].getBounds();
@@ -289,7 +296,7 @@ namespace chordrunner::ui
     void CycleLane::Handle::paint (juce::Graphics& g)
     {
         const auto centre = getLocalBounds().toFloat().getCentre();
-        g.setColour ((dragging || isMouseOver() ? accent : ink).withMultipliedAlpha (isEnabled() ? 1.0f : 0.35f));
+        g.setColour ((dragging || isMouseOver() ? accent : accent.withAlpha (0.65f)).withMultipliedAlpha (isEnabled() ? 1.0f : 0.35f));
         for (int dot = -2; dot <= 2; ++dot)
             g.fillEllipse (centre.x - 0.6f, centre.y + static_cast<float> (dot) * 4, 1.2f, 1.2f);
     }
