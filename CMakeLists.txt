@@ -98,6 +98,13 @@ if(CMAKE_SYSTEM_NAME STREQUAL "iOS")
     endif()
 endif()
 juce_add_binary_data(Assets SOURCES "assets/chords.json")
+if(CMAKE_SYSTEM_NAME STREQUAL "iOS")
+    # Static libraries are signed as part of the app/extension that links them.
+    # They have no provisioning profile or Signing & Capabilities editor.
+    set_target_properties(${PROJECT_NAME} Assets PROPERTIES
+        XCODE_ATTRIBUTE_CODE_SIGNING_ALLOWED NO
+        XCODE_ATTRIBUTE_CODE_SIGNING_REQUIRED NO)
+endif()
 target_compile_definitions(SharedCode INTERFACE
     JUCE_WEB_BROWSER=0 JUCE_USE_CURL=0 JUCE_VST3_CAN_REPLACE_VST2=0
     CMAKE_BUILD_TYPE="$<CONFIG>" VERSION="${CURRENT_VERSION}"

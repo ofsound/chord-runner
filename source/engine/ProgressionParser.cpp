@@ -116,7 +116,8 @@ juce::Result parse (const juce::String& text, Timeline& destination, juce::Strin
             label = token.substring (0, rootLength + suffixLength) + "@" + duration;
             migrated = true;
         }
-        label.copyToUTF8 (chord.label.data(), chord.label.size());
+        const auto chordName = juce::String::charToString (root) + token.substring (1, rootLength) + (*quality)["suffix"].toString();
+        chordName.copyToUTF8 (chord.label.data(), chord.label.size());
         migratedTokens.add (label);
     }
     if (next.count == 0)

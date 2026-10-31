@@ -14,6 +14,7 @@ PluginEditor::PluginEditor (PluginProcessor& p) : AudioProcessorEditor (&p), pro
             safe->nativeView->controller.refresh();
         });
     };
+    nativeView->preferredSizeChanged = [this] { updateNativeSize(); };
     setResizable (true, true);
    #if JUCE_IOS
     setResizeLimits (280, 240, 2560, 2560);
@@ -22,8 +23,7 @@ PluginEditor::PluginEditor (PluginProcessor& p) : AudioProcessorEditor (&p), pro
     else
         setSize (390, 700);
    #else
-    setResizeLimits (760, 540, 2560, 1600);
-    setSize (1120, 840); // 4:3 landscape canvas shared with the tablet layout.
+    updateNativeSize();
    #endif
 }
 
@@ -31,6 +31,25 @@ PluginEditor::~PluginEditor()
 {
    #if JUCE_IOS
     processorRef.getIOSProjectLibrary()->cancel();
+   #endif
+}
+
+void PluginEditor::updateNativeSize()
+{
+   #if JUCE_IOS
+    resized();
+   #else
+    using chordrunner::ui::UiScale;
+    const int percent = processorRef.getUiScalePercent();
+    const juce::ScopedValueSetter<bool> guard (applyingScale, true);
+    const float minimum = UiScale::factor (UiScale::minimumPercent);
+    const float maximum = UiScale::factor (UiScale::maximumPercent);
+    setResizeLimits (juce::roundToInt (UiScale::canvasWidth * minimum), juce::roundToInt (UiScale::canvasHeight * minimum),
+        juce::roundToInt (UiScale::canvasWidth * maximum), juce::roundToInt (UiScale::canvasHeight * maximum));
+    if (auto* limits = getConstrainer()) limits->setFixedAspectRatio (UiScale::aspectRatio);
+    const float scale = UiScale::factor (percent);
+    setSize (juce::roundToInt (UiScale::canvasWidth * scale), juce::roundToInt (UiScale::canvasHeight * scale));
+    resized();
    #endif
 }
 
@@ -46,8 +65,32 @@ void PluginEditor::resized()
             bounds = bounds.getIntersection (getLocalArea (nullptr, safeScreen));
         }
    #endif
-    if (nativeView != nullptr)
+    if (nativeView == nullptr || bounds.isEmpty()) return;
+   #if JUCE_IOS
+    // iPhone keeps its compact pages; iPad shares the desktop canvas in every
+    // orientation and host window size, rather than reflowing the header.
+    if (! juce::SystemStats::getDeviceDescription().startsWithIgnoreCase ("iPad"))
+    {
+        nativeView->setTransform ({});
         nativeView->setBounds (bounds);
+        return;
+    }
+   #endif
+    using chordrunner::ui::UiScale;
+    const float scale = juce::jmin (static_cast<float> (bounds.getWidth()) / UiScale::canvasWidth,
+        static_cast<float> (bounds.getHeight()) / UiScale::canvasHeight);
+    const int percent = juce::jlimit (UiScale::minimumPercent, UiScale::maximumPercent,
+        juce::roundToInt (scale / UiScale::baseline * 100.0f));
+   #if ! JUCE_IOS
+    if (! applyingScale) processorRef.setUiScalePercent (percent);
+    nativeView->showUiScalePercent (percent);
+   #else
+    juce::ignoreUnused (percent);
+   #endif
+    const auto offset = bounds.toFloat().getCentre()
+        - juce::Point<float> (UiScale::canvasWidth * scale, UiScale::canvasHeight * scale) * 0.5f;
+    nativeView->setBounds (0, 0, UiScale::canvasWidth, UiScale::canvasHeight);
+    nativeView->setTransform (juce::AffineTransform::scale (scale).translated (offset));
 }
 
 

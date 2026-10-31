@@ -424,6 +424,50 @@ TEST_CASE ("Preroll starts an evenly spaced arpeggio without a catch-up burst", 
     CHECK (starts == std::vector<int> {240,6240});
 }
 
+TEST_CASE ("Plugin wrappers follow host transport without local clock selection or arming", "[processor][host]")
+{
+    class Head final : public juce::AudioPlayHead
+    {
+    public:
+        PositionInfo position;
+        juce::Optional<PositionInfo> getPosition() const override { return position; }
+    } head;
+    for (const auto wrapper : { juce::AudioProcessor::wrapperType_AudioUnit, juce::AudioProcessor::wrapperType_VST3 })
+    {
+        juce::AudioProcessor::setTypeOfNextNewPlugin (wrapper);
+        PluginProcessor processor;
+        juce::AudioProcessor::setTypeOfNextNewPlugin (juce::AudioProcessor::wrapperType_Undefined);
+        configure (processor, true, false);
+        auto state = processor.getTimelineState();
+        state.getDynamicObject()->setProperty ("hostSync", false);
+        REQUIRE (processor.setTimelineState (state).wasOk());
+        prepareArp (processor);
+        juce::AudioBuffer<float> audio (2, 512);
+        juce::MidiBuffer midi;
+        processor.processBlock (audio, midi);
+        CHECK (noteOns (midi).empty());
+        processor.setPlayHead (&head);
+        head.position.setBpm (87);
+        head.position.setPpqPosition (0);
+        head.position.setIsPlaying (true);
+        processor.processBlock (audio, midi);
+        CHECK_FALSE (noteOns (midi).empty());
+        CHECK (static_cast<double> (processor.getTransportState()["tempo"]) == Catch::Approx (87));
+        midi.clear();
+        head.position.setIsPlaying (false);
+        processor.processBlock (audio, midi);
+        CHECK (noteOns (midi).empty());
+        CHECK_FALSE (readEvents (midi).empty());
+        for (const auto& event : readEvents (midi)) CHECK_FALSE (event.on);
+        midi.clear();
+        head.position.setPpqPosition (0);
+        head.position.setIsPlaying (true);
+        processor.processBlock (audio, midi);
+        CHECK_FALSE (noteOns (midi).empty());
+        processor.setPlayHead (nullptr);
+    }
+}
+
 TEST_CASE ("Host seeks, loops, stops and channel edits release sequenced arpeggios", "[arp][host]")
 {
     class Head final : public juce::AudioPlayHead

@@ -51,8 +51,10 @@ class Arpeggiator
 public:
     static constexpr int capacity = 128;
     Arpeggiator() { sampleMidi.ensureSize (73728); }
+    // Sequencer input can update its velocity without replacing held source notes.
+    // A negative override preserves the velocities of physical MIDI input.
     void render (const ArpeggiatorSettings&, const juce::MidiBuffer& input, juce::MidiBuffer& output,
-                 double beat, double bpm, double sampleRate, int samples, bool running, bool changed);
+                 double beat, double bpm, double sampleRate, int samples, bool running, bool changed, int velocityOverride = -1);
     void stop (juce::MidiBuffer&, int sample = 0, bool clearKeys = true);
     int inputNoteCount() const { return keyCount; }
     juce::uint64 triggerSerial() const { return emittedSerial; }
@@ -79,6 +81,7 @@ private:
     double clock = 0.0, next = 0.0, nominalNext = 0.0, velocityStart = 0.0, expectedBeat = 0.0;
     juce::int64 retriggerBucket = -1;
     bool wasRunning = false;
+    ArpeggiatorSettings previousSettings;
     juce::uint64 emittedSerial = 0, emittedStep = 0, emittedRhythmStep = 0;
     int emittedVelocity = 0;
     double emittedClock = 0;

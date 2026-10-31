@@ -63,7 +63,8 @@ void PluginProcessor::processBlock (juce::AudioBuffer<float>& audio, juce::MidiB
     snapshots->consume();
     const auto& bank = snapshots->current();
     const auto& master = bank.patterns[static_cast<size_t> (juce::jmax (0, activePattern))];
-    const bool sync = master.hostSync && ! isStandalone();
+    const bool hosted = isHosted();
+    const bool sync = hosted || (master.hostSync && ! isStandalone());
     bool reset = resetRequested.exchange (false, std::memory_order_acq_rel) || sync != previousHostSync || bypassed;
     const bool hadQueuedPattern = queuedPattern != -2;
     if (reset)
@@ -92,7 +93,7 @@ void PluginProcessor::processBlock (juce::AudioBuffer<float>& audio, juce::MidiB
                     beat = *hostBeat;
                     bpm = *hostTempo;
                     hostPlaying = position->getIsPlaying();
-                    playing = hostPlaying && (! master.sequencerEnabled || playRequested.load (std::memory_order_acquire));
+                    playing = hostPlaying && (hosted || ! master.sequencerEnabled || playRequested.load (std::memory_order_acquire));
                 }
             }
     }
@@ -145,7 +146,7 @@ void PluginProcessor::processBlock (juce::AudioBuffer<float>& audio, juce::MidiB
         else
         {
             const auto& timeline = bank.patterns[static_cast<size_t> (activePattern)];
-            const bool segmentPlaying = (! timeline.sequencerEnabled || playRequested.load (std::memory_order_acquire))
+            const bool segmentPlaying = (hosted || ! timeline.sequencerEnabled || playRequested.load (std::memory_order_acquire))
                 && (! sync || hostPlaying);
             const bool changed = renderedRevision != timeline.noteRevision;
             const bool route = timeline.sequencerEnabled != previousSequencer || timeline.arp.enabled != previousArp;
@@ -173,7 +174,7 @@ void PluginProcessor::processBlock (juce::AudioBuffer<float>& audio, juce::MidiB
                 engine.render (timeline, localBeat, bpm, getSampleRate(), count, segmentPlaying, changed || force || route,
                                timeline.arp.enabled ? sequenceMidi : segmentMidi);
                 if (timeline.arp.enabled)
-                    arpeggiator.render (timeline.arp, sequenceMidi, segmentMidi, localBeat, bpm, getSampleRate(), count, segmentPlaying, changed || force);
+                    arpeggiator.render (timeline.arp, sequenceMidi, segmentMidi, localBeat, bpm, getSampleRate(), count, segmentPlaying, changed || force, timeline.velocity);
             }
             else if (timeline.arp.enabled)
             {

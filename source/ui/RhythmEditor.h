@@ -17,14 +17,17 @@ namespace chordrunner::ui
         void setInline (bool value)
         {
             inlineLane = value;
+            power.setFaceDiameter (value ? 26.0f : 18.0f);
+            power.setHeadingSize (value ? inlineHeadingSize : sectionHeadingSize);
             resized();
         }
 
     private:
+        static constexpr float inlineHeadingSize = 30.0f;
         bool inlineLane = false;
-        int columns() const { return inlineLane ? (getWidth() >= 450 ? 16 : 8) : getWidth() < 380 ? 4
-                                                                             : getWidth() < 700   ? 8
-                                                                                                  : 16; }
+        // Retain access to all steps in older 16-step projects.
+        int visibleSteps() const { return length > 8 ? 16 : 8; }
+        int columns() const { return inlineLane ? 8 : getWidth() < 380 ? 4 : 8; }
         EditorController& controller;
         bool tieLane;
         int length = 4, mask = 15;
@@ -47,7 +50,7 @@ namespace chordrunner::ui
             {
                 setWantsKeyboardFocus (true);
                 setMouseCursor (juce::MouseCursor::LeftRightResizeCursor);
-                setTooltip ("Drag the range edge to set length (1-16); arrow keys adjust; Escape cancels");
+                setTooltip ("Drag the range edge to set length (1-8); arrow keys adjust; Escape cancels");
             }
             void paint (juce::Graphics&) override;
             void enablementChanged() override
@@ -70,7 +73,7 @@ namespace chordrunner::ui
         } handle { *this };
         melatonin::DropShadow cellGlow { { accentYellow.withAlpha (0.35f), 6 },
             { accentYellow.withAlpha (0.3f), 2 } };
-        int cellStride = 1, cellTop = 27, rowStride = 30;
+        int cellStride = 1, cellLeft = 10, cellTop = 27, rowStride = 30;
         int dragFrom = -1, dragTo = -1, dragRevision = -1, dragPattern = -1;
         bool bitDragging = false, gestureChanged = false;
         int gestureRevision = -1, gesturePattern = -1;

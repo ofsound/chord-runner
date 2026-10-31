@@ -147,7 +147,7 @@ void Arpeggiator::emit (const Key& key, int transpose, const ArpeggiatorSettings
 }
 
 void Arpeggiator::render (const ArpeggiatorSettings& settings, const juce::MidiBuffer& input, juce::MidiBuffer& output,
-                         double beat, double bpm, double sampleRate, int samples, bool running, bool changed)
+                         double beat, double bpm, double sampleRate, int samples, bool running, bool changed, int velocityOverride)
 {
     if (samples <= 0)
         return;
@@ -159,6 +159,51 @@ void Arpeggiator::render (const ArpeggiatorSettings& settings, const juce::MidiB
     }
     if (wasRunning && std::abs (beat - expectedBeat) > 1.0e-7)
         stop (output);
+    // Parameter edits are live updates, not transport events. Keep the current
+    // step, envelope age and scheduled attacks; use new values on later steps.
+    if (wasRunning && ! changed)
+    {
+        if (settings.retrigger != previousSettings.retrigger || std::abs (settings.interval - previousSettings.interval) > 1.0e-12)
+            retriggerBucket = settings.retrigger == 2 && beat >= 0.0
+                ? static_cast<juce::int64> (std::floor ((beat + 1.0e-9) / settings.interval)) : -1;
+        if (previousSettings.hold && ! settings.hold)
+        {
+            const int previousCount = keyCount;
+            for (int i = keyCount - 1; i >= 0; --i)
+            {
+                const auto key = keys[static_cast<size_t> (i)];
+                if (key.down || sustain[static_cast<size_t> (key.channel - 1)]) continue;
+                for (int v = voiceCount - 1; v >= 0; --v)
+                    if (voices[static_cast<size_t> (v)].source == key.note && voices[static_cast<size_t> (v)].channel == key.channel)
+                    {
+                        output.addEvent (juce::MidiMessage::noteOff (key.channel, voices[static_cast<size_t> (v)].note), 0);
+                        voices[static_cast<size_t> (v)] = voices[static_cast<size_t> (--voiceCount)];
+                    }
+                std::move (keys.begin() + i + 1, keys.begin() + keyCount, keys.begin() + i);
+                --keyCount;
+            }
+            if (keyCount != previousCount) rebuild();
+            if (keyCount == 0) stop (output);
+        }
+        const bool tieChanged = settings.tieSequenceEnabled != previousSettings.tieSequenceEnabled
+            || (settings.tieSequenceEnabled && (settings.tieMask != previousSettings.tieMask || settings.tieLength != previousSettings.tieLength));
+        const bool gateChanged = settings.gateSequenceEnabled != previousSettings.gateSequenceEnabled
+            || (settings.gateSequenceEnabled && (settings.gateMask != previousSettings.gateMask || settings.gateLength != previousSettings.gateLength));
+        if (tieChanged || gateChanged || (settings.tieSequenceEnabled && settings.repeats != previousSettings.repeats))
+        {
+            // An old tie may have an effectively infinite tail. Let it reach
+            // the next step, then let the edited rhythm take over.
+            const double boundary = juce::jmax (clock + 1.0, nominalNext);
+            for (int v = 0; v < voiceCount; ++v)
+                voices[static_cast<size_t> (v)].off = juce::jmin (voices[static_cast<size_t> (v)].off, boundary);
+            for (int p = 0; p < pendingCount; ++p)
+            {
+                auto& hit = pending[static_cast<size_t> (p)];
+                hit.duration = juce::jmin (hit.duration, juce::jmax (1.0, boundary - hit.at) * 100.0 / settings.gate);
+            }
+        }
+    }
+    previousSettings = settings;
     if (changed)
     {
         stop (output, 0, false);
@@ -343,7 +388,11 @@ void Arpeggiator::render (const ArpeggiatorSettings& settings, const juce::MidiB
                     return key.note == hit.key.note && key.channel == hit.key.channel;
                 });
                 if (present && (settings.style == ArpeggiatorSettings::chordTrigger || i == newest))
-                    emit (hit.key, hit.transpose, settings, hit.duration, sampleRate, sampleMidi, sample, hit.ordinal, hit.rhythmOrdinal);
+                {
+                    auto key = hit.key;
+                    if (velocityOverride >= 0) key.velocity = juce::jlimit (1, 127, velocityOverride);
+                    emit (key, hit.transpose, settings, hit.duration, sampleRate, sampleMidi, sample, hit.ordinal, hit.rhythmOrdinal);
+                }
             }
             pendingCount = remaining;
         };

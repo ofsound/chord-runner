@@ -10,10 +10,13 @@ class ModulePower final : public juce::TextButton
 public:
     explicit ModulePower (const juce::String& name) : juce::TextButton (name) { setTooltip (name); }
     void setFaceDiameter (float value) { faceDiameter = value; repaint(); }
+    void setHeadingSize (float value) { headingSize = value; repaint(); }
+    void setHeading (juce::String value) { heading = std::move (value); repaint(); }
     void paintButton (juce::Graphics&, bool, bool) override;
 private:
-    float faceDiameter = 28.0f;
-    melatonin::DropShadow glow { accentGreen.withAlpha (0.55f), 6 };
+    float faceDiameter = 28.0f, headingSize = sectionHeadingSize;
+    juce::String heading;
+    melatonin::DropShadow glow { accentGreen.withAlpha (0.36f), 3 };
     melatonin::InnerShadow recess { juce::Colours::black.withAlpha (0.6f), 3, { 0, 1 } };
 };
 

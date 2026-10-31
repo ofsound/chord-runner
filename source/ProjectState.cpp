@@ -3,6 +3,22 @@
 
 namespace
 {
+bool notesChanged (const chordrunner::Timeline& next, const chordrunner::Timeline& previous)
+{
+    if (next.count != previous.count || std::abs (next.length() - previous.length()) > 1.0e-9
+        || next.channel != previous.channel || next.sequencerEnabled != previous.sequencerEnabled)
+        return true;
+    for (int c = 0; c < next.count; ++c)
+    {
+        const auto& a = next.chords[static_cast<size_t> (c)];
+        const auto& b = previous.chords[static_cast<size_t> (c)];
+        if (a.noteCount != b.noteCount || std::abs (a.beats - b.beats) > 1.0e-9 || a.notes != b.notes
+            || a.startOffsets != b.startOffsets || a.durations != b.durations)
+            return true;
+    }
+    return false;
+}
+
 juce::var encodeTimeline (const chordrunner::Timeline& state, const juce::String& progression)
 {
     auto object = std::make_unique<juce::DynamicObject>();
@@ -334,14 +350,7 @@ juce::Result PluginProcessor::setTimelineState (const juce::var& value)
             return juce::Result::fail ("The selected pattern changed while editing. Try the edit again.");
         auto& pattern = patterns[static_cast<size_t> (juce::jmax (0, target))];
         const auto& state = pattern.timeline;
-        bool tonesChanged = next.count != state.count;
-        for (int c = 0; c < juce::jmin (next.count, state.count); ++c)
-            tonesChanged = tonesChanged || next.chords[static_cast<size_t> (c)].notes != state.chords[static_cast<size_t> (c)].notes
-                           || next.chords[static_cast<size_t> (c)].startOffsets != state.chords[static_cast<size_t> (c)].startOffsets
-                           || next.chords[static_cast<size_t> (c)].durations != state.chords[static_cast<size_t> (c)].durations;
-        const bool changed = tonesChanged || std::abs (next.length() - state.length()) > 1.0e-9 || text != pattern.progression || next.octave != state.octave
-                             || next.channel != state.channel || next.voiceLeading != state.voiceLeading || next.velocity != state.velocity
-                             || next.sequencerEnabled != state.sequencerEnabled || next.arp != state.arp;
+        const bool changed = notesChanged (next, state);
         next.noteRevision = state.noteRevision + (changed ? 1u : 0u);
         // Tempo and clock belong to the project, and never restart held notes.
         for (auto& item : patterns)
@@ -363,6 +372,7 @@ juce::var PluginProcessor::getProjectState() const
     auto document = std::make_unique<juce::DynamicObject>();
     document->setProperty ("app", "Chord Runner");
     document->setProperty ("schema", 4);
+    document->setProperty ("uiScalePercent", getUiScalePercent());
     document->setProperty ("selectedPattern", selectedStatus.load());
     document->setProperty ("launchMode", launchMode.load());
     document->setProperty ("projectName", projectName);
@@ -388,6 +398,14 @@ juce::Result PluginProcessor::setProjectState (const juce::var& value, bool stop
     const juce::ScopedLock documentLock (stateLock);
     std::array<Pattern, patternCount> next;
     int selection = 0, mode = 3;
+    int scalePercent = chordrunner::ui::UiScale::defaultPercent;
+    if (value.hasProperty ("uiScalePercent"))
+    {
+        if (! numberInRange (value["uiScalePercent"], chordrunner::ui::UiScale::minimumPercent, chordrunner::ui::UiScale::maximumPercent)
+            || std::abs (static_cast<double> (value["uiScalePercent"]) - std::round (static_cast<double> (value["uiScalePercent"]))) > 1.0e-9)
+            return juce::Result::fail ("Invalid UI scale.");
+        scalePercent = static_cast<int> (value["uiScalePercent"]);
+    }
     juce::String name { "Untitled Project" }, author, description, created, modified;
     if (value.hasProperty ("patterns"))
     {
@@ -433,10 +451,16 @@ juce::Result PluginProcessor::setProjectState (const juce::var& value, bool stop
     }
     if (stop)
         setPlaying (false);
+    if (stop)
+        setUiScalePercent (scalePercent);
     {
         const juce::ScopedLock lock (stateLock);
         for (int i = 0; i < patternCount; ++i)
-            next[static_cast<size_t> (i)].timeline.noteRevision = patterns[static_cast<size_t> (i)].timeline.noteRevision + 1;
+        {
+            auto& timeline = next[static_cast<size_t> (i)].timeline;
+            const auto& previous = patterns[static_cast<size_t> (i)].timeline;
+            timeline.noteRevision = previous.noteRevision + (stop || notesChanged (timeline, previous) ? 1u : 0u);
+        }
         patterns = std::move (next);
         projectName = name.trim().isEmpty() ? juce::String ("Untitled Project") : name;
         projectAuthor = author;
@@ -614,6 +638,7 @@ juce::String documentFingerprint (const juce::var& document)
     auto value = document.clone();
     value.getDynamicObject()->removeProperty ("modifiedAt");
     value.getDynamicObject()->removeProperty ("createdAt");
+    value.getDynamicObject()->removeProperty ("uiScalePercent");
     return juce::JSON::toString (value, true);
 }
 }
@@ -692,6 +717,7 @@ void PluginProcessor::restoreStandaloneSettings (const juce::PropertySet& proper
     const auto path = properties.getValue ("projectFile");
     if (juce::File::isAbsolutePath (path)) projectFile = juce::File (path);
     cleanDocument = properties.getValue ("cleanDocument", cleanDocument);
+    setUiScalePercent (properties.getIntValue ("uiScalePercent", getUiScalePercent()));
    #if JUCE_IOS
     iosLibrary->restoreAccess (properties);
    #endif
@@ -702,6 +728,7 @@ void PluginProcessor::saveStandaloneSettings (juce::PropertySet& properties) con
     const juce::ScopedLock documentLock (stateLock);
     properties.setValue ("projectFile", projectFile.getFullPathName());
     properties.setValue ("cleanDocument", cleanDocument);
+    properties.setValue ("uiScalePercent", getUiScalePercent());
    #if JUCE_IOS
     iosLibrary->saveAccess (properties);
    #endif

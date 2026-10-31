@@ -2,6 +2,7 @@
 #include <juce_audio_processors/juce_audio_processors.h>
 #include "engine/TimelineEngine.h"
 #include "engine/OutputPreview.h"
+#include "ui/UiScale.h"
 #include "platform/IOSProjectLibrary.h"
 
 class PluginProcessor : public juce::AudioProcessor
@@ -75,8 +76,17 @@ public:
     double lastMidiInputTime() const { return midiInputTime.load (std::memory_order_relaxed); }
     double lastMidiOutputTime() const { return midiOutputTime.load (std::memory_order_relaxed); }
     bool isStandalone() const { return wrapperType == wrapperType_Standalone; }
+    bool isHosted() const { return wrapperType != wrapperType_Undefined && ! isStandalone(); }
+    int getUiScalePercent() const { return uiScalePercent.load (std::memory_order_relaxed); }
+    void setUiScalePercent (int value)
+    {
+        value = juce::jlimit (chordrunner::ui::UiScale::minimumPercent, chordrunner::ui::UiScale::maximumPercent, value);
+        if (uiScalePercent.exchange (value, std::memory_order_relaxed) != value)
+            revision.fetch_add (1, std::memory_order_release);
+    }
 
 private:
+    std::atomic<int> uiScalePercent { chordrunner::ui::UiScale::defaultPercent };
    #if JUCE_IOS
     std::shared_ptr<chordrunner::IOSProjectLibrary> iosLibrary;
    #endif

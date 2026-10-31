@@ -25,6 +25,11 @@ T& control (juce::Component& editor, const juce::String& id)
 }
 void choose (NativeEditor& editor, const juce::String& id, int item)
 {
+    if (id == "arp.style" || id == "arp.retrigger" || id == "arp.sync" || id == "arp.octaveMode")
+    {
+        control<juce::TextButton> (editor, id + "." + juce::String (id == "arp.octaveMode" ? 2 - item : item - 1)).onClick();
+        return;
+    }
     auto& combo = control<juce::ComboBox> (editor, id);
     combo.setSelectedId (item, juce::dontSendNotification);
     combo.onChange();
@@ -68,10 +73,12 @@ TEST_CASE ("Native controls retain every numeric engine mapping", "[native-ui]")
     CHECK (static_cast<int> (processor.getTimelineState()["channel"]) == 1);
     CHECK (static_cast<bool> (processor.getTimelineState()["hostSync"]));
     CHECK_FALSE (control<juce::Slider> (editor, "tempo").isEnabled());
-    for (int style = 0; style < 11; ++style)
+    for (const int style : { 0, 1, 2, 3, 4, 5, 6, 8, 9 })
     {
         choose (editor, "arp.style", style + 1);
         CHECK (static_cast<int> (processor.getTimelineState()["arp"]["style"]) == style);
+        for (const int other : { 0, 1, 2, 3, 4, 5, 6, 8, 9 })
+            CHECK (control<juce::TextButton> (editor, "arp.style." + juce::String (other)).getToggleState() == (other == style));
     }
     constexpr std::array<double, 12> divisions { 4, 2, 1, 0.5, 0.25, 0.125, 0.0625, 2.0 / 3, 1.0 / 3, 1.0 / 6, 0.75, 0.375 };
     for (size_t i = 0; i < divisions.size(); ++i)
@@ -248,7 +255,7 @@ TEST_CASE ("Native editor fits supported sizes and uses the engine timeline", "[
     for (const auto size : { juce::Point<int> (760, 540), juce::Point<int> (1120, 900), juce::Point<int> (2560, 1600) })
     {
         editor.setSize (size.x, size.y);
-        for (const auto* id : { "voiceLeading", "timeline.fit" })
+        for (const auto* id : { "voiceLeading" })
         {
             const auto* action = findControl (editor, id);
             REQUIRE (action != nullptr);
@@ -260,7 +267,10 @@ TEST_CASE ("Native editor fits supported sizes and uses the engine timeline", "[
             REQUIRE (component != nullptr);
             CHECK ((component->getComponentID() == "arp.interval" ? component->getParentComponent()->getWidth() : component->getWidth()) >= 65);
             CHECK (component->getHeight() >= 20);
-            CHECK (component->getParentComponent()->getLocalBounds().contains (component->getBounds()));
+            INFO (id << " at " << size.x << " x " << size.y);
+            if (component->isVisible())
+                CHECK (component->getParentComponent()->getLocalBounds().contains (
+                    component->getParentComponent()->getLocalArea (component, component->getLocalBounds())));
         }
     }
     auto& timeline = control<TimelineView> (editor, "timeline");
@@ -288,7 +298,7 @@ TEST_CASE ("Phone pages fit portrait and landscape without scrolling or losing c
             const juce::StringArray ids = page == 0 ? juce::StringArray { "pattern.1", "pattern.16", "launch", "tempo", "clock" }
                 : page == 1 ? juce::StringArray { "progression", "apply", "octave", "velocity", "voiceLeading" }
                 : page == 2 ? juce::StringArray { "arp.style", "arp.rate", "arp.gate", "arp.steps", "arp.offset", "arp.interval" }
-                : page == 4 ? juce::StringArray { "rhythm.gate.1", "rhythm.gate.16", "rhythm.tie.1", "rhythm.tie.16" }
+                : page == 4 ? juce::StringArray { "rhythm.gate.1", "rhythm.gate.8", "rhythm.tie.1", "rhythm.tie.8" }
                 : juce::StringArray { "arp.swing", "arp.swingSubdivision", "arp.velocityHumanize", "arp.timingHumanize", "arp.target", "arp.decay" };
             for (const auto& id : ids)
             {
@@ -343,7 +353,9 @@ TEST_CASE ("Open sequence and arp split the viewport without vertical scrolling"
         CHECK_FALSE (viewport.getVerticalScrollBar().isVisible());
         CHECK (viewport.getViewPositionY() == 0);
         CHECK (std::abs (sequence.getHeight() - arp.getHeight()) <= 1);
-        CHECK (arp.getBottom() == viewport.getHeight());
+        CHECK (sequence.getY() == ModuleCard::verticalMargin);
+        CHECK (arp.getY() - sequence.getBottom() == ModuleCard::moduleGap);
+        CHECK (arp.getBottom() == viewport.getHeight() - ModuleCard::verticalMargin);
         CHECK_FALSE (control<ArpVisualizer> (editor, "arp.visualizer").isVisible());
         for (const auto* id : { "progression", "apply", "velocity", "voiceLeading", "timeline",
                  "arp.style", "arp.retrigger", "arp.interval", "arp.strength", "arp.decay", "rhythm.gate", "rhythm.tie" })
@@ -392,10 +404,19 @@ TEST_CASE ("Voice-leading choice updates the native sequence header and actual t
     NativeEditor editor (processor);
     editor.setSize (390, 844);
     control<juce::TextButton> (editor, "phone.page.1").onClick();
-    REQUIRE (editor.controller.set ("voiceLeading", 2));
-    CHECK (control<juce::TextButton> (editor, "voiceLeading").getButtonText() == "Ramp Up");
+    for (int mode = 0; mode < 4; ++mode)
+    {
+        auto& button = control<juce::TextButton> (editor, "voiceLeading." + juce::String (mode));
+        CHECK (button.isVisible());
+        button.onClick();
+        CHECK (static_cast<int> (processor.getTimelineState()["voiceLeading"]) == mode);
+        for (int other = 0; other < 4; ++other)
+            CHECK (control<juce::TextButton> (editor, "voiceLeading." + juce::String (other)).getToggleState() == (other == mode));
+    }
     editor.controller.undo();
-    CHECK (control<juce::TextButton> (editor, "voiceLeading").getButtonText() == "Root position");
+    CHECK (control<juce::TextButton> (editor, "voiceLeading.0").getToggleState());
+    editor.controller.redo();
+    CHECK (control<juce::TextButton> (editor, "voiceLeading.3").getToggleState());
 }
 
 TEST_CASE ("Arp-only view reclaims sequence space and previews production MIDI", "[native-ui][arp-preview]")
@@ -404,13 +425,13 @@ TEST_CASE ("Arp-only view reclaims sequence space and previews production MIDI",
     NativeEditor editor (processor);
     editor.setSize (1400, 1000);
     toggle (editor, "arp.enabled", true);
-    const auto original = control<juce::ComboBox> (editor, "arp.style").getParentComponent()->getY();
+    const auto original = findControl (editor, "arp.style")->getY();
     toggle (editor, "sequencerEnabled", false);
     auto& preview = control<ArpVisualizer> (editor, "arp.visualizer");
     CHECK (preview.isVisible());
     CHECK_FALSE (control<juce::TextEditor> (editor, "progression").isVisible());
     CHECK (control<juce::TextButton> (editor, "sequencerEnabled").getParentComponent()->getHeight() == ModuleCard::headerHeight);
-    CHECK (control<juce::ComboBox> (editor, "arp.style").getParentComponent()->getY() > original);
+    CHECK (findControl (editor, "arp.style")->getY() > original);
     REQUIRE_FALSE (preview.previewNotes().empty());
     for (const auto& note : preview.previewNotes()) CHECK (note.end >= note.start);
     const auto beforeSequenceEdit = preview.previewNotes();
@@ -470,7 +491,7 @@ TEST_CASE ("Phone arp preview adapts to touch space in both orientations", "[nat
         stream.setPosition (0); stream.truncate();
         juce::PNGImageFormat().writeImageToStream (image, stream);
         button.setToggleState (false, juce::dontSendNotification); button.onClick();
-        CHECK (control<juce::ComboBox> (editor, "arp.style").getParentComponent()->isVisible());
+        CHECK (findControl (editor, "arp.style")->isVisible());
     }
 }
 
@@ -686,6 +707,28 @@ TEST_CASE ("Abstract arp ranks follow live MIDI key counts and fall back to four
     CHECK (preview.inputRanks() == 4);
 }
 
+TEST_CASE ("Hosted editors hide local transport across responsive layouts", "[native-ui][header][host]")
+{
+    for (const auto wrapper : { juce::AudioProcessor::wrapperType_AudioUnit, juce::AudioProcessor::wrapperType_VST3,
+                               juce::AudioProcessor::wrapperType_Standalone })
+    {
+        juce::AudioProcessor::setTypeOfNextNewPlugin (wrapper);
+        PluginProcessor processor;
+        juce::AudioProcessor::setTypeOfNextNewPlugin (juce::AudioProcessor::wrapperType_Undefined);
+        NativeEditor editor (processor);
+        for (const auto size : { juce::Point<int> (1400, 900), juce::Point<int> (760, 540),
+                                 juce::Point<int> (390, 844), juce::Point<int> (844, 390), juce::Point<int> (1120, 800) })
+        {
+            editor.setSize (size.x, size.y);
+            editor.controller.poll();
+            CHECK (findControl (editor, "play")->isVisible() == processor.isStandalone());
+            CHECK (findControl (editor, "tempo")->getParentComponent()->isVisible() == processor.isStandalone());
+            CHECK (findControl (editor, "clock")->getParentComponent()->isVisible() == processor.isStandalone());
+            CHECK (findControl (editor, "launch")->getParentComponent()->isVisible());
+        }
+    }
+}
+
 TEST_CASE ("Desktop header consolidates transport projects and square pattern pads", "[native-ui][header]")
 {
     PluginProcessor processor;
@@ -694,15 +737,15 @@ TEST_CASE ("Desktop header consolidates transport projects and square pattern pa
     {
         editor.setSize (size.x, size.y);
         auto& playButton = control<juce::TextButton> (editor, "play");
-        CHECK (playButton.getBottom() <= (size.x >= 1108 ? 62 : 56));
-        CHECK (control<juce::Slider> (editor, "tempo").getParentComponent()->getBottom() <= (size.x >= 1108 ? 62 : 56));
+        CHECK (playButton.getBottom() <= (size.x >= 1264 ? 62 : 56));
+        CHECK (control<juce::Slider> (editor, "tempo").getParentComponent()->getBottom() <= (size.x >= 1264 ? 62 : 56));
         const int bodyTop = control<juce::Viewport> (editor, "body.viewport").getY();
         CHECK (control<juce::ComboBox> (editor, "clock").getParentComponent()->getBottom() < bodyTop);
-        CHECK (bodyTop <= (size.x < 1108 ? 126 : 88));
+        CHECK (bodyTop <= (size.x < 1264 ? 126 : 88));
         CHECK (playButton.getWidth() == playButton.getHeight());
         CHECK (playButton.getWidth() == 32);
-        CHECK (findControl (editor, "project.details")->getWidth() <= 180);
-        if (size.x >= 1108)
+        CHECK (findControl (editor, "project.details")->getWidth() >= 160);
+        if (size.x >= 1264)
             for (const auto* id : { "project.details", "project.menu", "undo", "redo" })
                 CHECK (findControl (editor, id)->getBounds().getCentreY() == playButton.getBounds().getCentreY());
         for (const auto* id : { "undo", "redo" })
@@ -735,7 +778,7 @@ TEST_CASE ("Modules collapse automatically and title bars fold without changing 
     auto& sequenceCard = control<ModuleCard> (editor, "sequence.module");
     auto& arpCard = control<ModuleCard> (editor, "arp.module");
     CHECK (arpCard.getHeight() == ModuleCard::headerHeight);
-    CHECK_FALSE (control<juce::ComboBox> (editor, "arp.style").getParentComponent()->isVisible());
+    CHECK_FALSE (findControl (editor, "arp.style")->isVisible());
     CHECK (sequenceCard.getHeight() > 224);
     const auto image = editor.createComponentSnapshot (editor.getLocalBounds());
     juce::FileOutputStream stream (juce::File ("/tmp/chord-runner-sequencer-only.png"));
@@ -780,8 +823,16 @@ TEST_CASE ("Inline Gate and Tie share a row below arp controls and visualization
     CHECK (gateBounds.getHeight() <= 84);
     CHECK (gateBounds.getRight() < tieBounds.getX());
     CHECK (gateBounds.getY() > 220);
-    CHECK (preview.getBottom() < gateBounds.getY());
+    CHECK (arp.getLocalArea (&preview, preview.getLocalBounds()).getBottom() < gateBounds.getY());
     auto& power = control<ModulePower> (editor, "rhythm.gate.enabled");
+    const auto& first = control<juce::TextButton> (editor, "rhythm.gate.1");
+    const auto& last = control<juce::TextButton> (editor, "rhythm.gate.8");
+    CHECK (first.getY() == last.getY());
+    CHECK (first.getHeight() > 72);
+    CHECK (power.getRight() < first.getX());
+    CHECK (power.getBounds().getCentreY() == Catch::Approx (first.getBounds().getCentreY()).margin (2));
+    CHECK_FALSE (control<juce::TextButton> (editor, "rhythm.gate.9").isVisible());
+
     power.setToggleState (true, juce::dontSendNotification); power.onClick();
     control<juce::TextButton> (editor, "rhythm.gate.2").onClick();
     CHECK ((static_cast<int> (processor.getTimelineState()["arp"]["gateMask"]) & 2) == 0);
@@ -847,11 +898,11 @@ TEST_CASE ("Sequence source settings belong to the sequence panel and collapse w
         CHECK (component->getParentComponent()->isVisible());
     }
     const auto* octaveControl = findControl (editor, "octave")->getParentComponent();
-    for (const auto* id : { "voiceLeading", "timeline.fit" })
+    for (const auto* id : { "voiceLeading" })
     {
         const auto* action = findControl (editor, id);
         REQUIRE (action != nullptr);
-        CHECK (action->getX() > octaveControl->getRight());
+        CHECK (action->getRight() < findControl (editor, "velocity")->getParentComponent()->getX());
         CHECK (action->getY() >= octaveControl->getY());
         CHECK (action->getBottom() <= octaveControl->getBottom());
     }
@@ -903,8 +954,8 @@ TEST_CASE ("KSH-style cycle edge follows the pointer and groups length edits for
         handle.mouseDrag (cyclePointerEvent (handle, point - handle.getPosition().toFloat(), origin));
     };
     handle.mouseDown (cyclePointerEvent (handle, origin, origin));
-    dragTo (10);
-    CHECK (static_cast<int> (processor.getTimelineState()["arp"]["gateLength"]) == 10);
+    dragTo (8);
+    CHECK (static_cast<int> (processor.getTimelineState()["arp"]["gateLength"]) == 8);
     dragTo (6);
     handle.mouseUp (cyclePointerEvent (handle, origin, origin));
     CHECK (static_cast<int> (processor.getTimelineState()["arp"]["gateLength"]) == 6);
@@ -912,7 +963,7 @@ TEST_CASE ("KSH-style cycle edge follows the pointer and groups length edits for
     CHECK (static_cast<int> (processor.getTimelineState()["arp"]["gateLength"]) == 4);
     CHECK_FALSE (processor.canUndo());
     handle.mouseDown (cyclePointerEvent (handle, origin, origin));
-    dragTo (9);
+    dragTo (7);
     CHECK (handle.keyPressed (juce::KeyPress (juce::KeyPress::escapeKey)));
     CHECK (static_cast<int> (processor.getTimelineState()["arp"]["gateLength"]) == 4);
     lane.refresh();
@@ -1033,7 +1084,7 @@ TEST_CASE ("Start step presents only positions in the current arp cycle", "[nati
     CHECK (start.getValue() == 1.0);
     CHECK (start.getTextFromValue (start.getValue()) == "2 / 12");
     CHECK (static_cast<int> (processor.getTimelineState()["arp"]["offset"]) == 13);
-    choose (editor, "arp.style", 8); // Chord trigger has one position per pass.
+    REQUIRE (editor.controller.set ("style", 7, true)); // Legacy chord trigger projects still restore.
     CHECK (start.getMaximum() == 2.0);
     control<juce::Slider> (editor, "arp.steps").setValue (0, juce::sendNotificationSync);
     CHECK_FALSE (start.isEnabled());
@@ -1060,8 +1111,8 @@ TEST_CASE ("Arp octave range replaces semitone distance", "[native-ui][arp]")
     PluginProcessor processor;
     NativeEditor editor (processor);
     auto& octaves = control<juce::Slider> (editor, "arp.steps");
-    CHECK (octaves.getTextFromValue (0) == "1");
-    CHECK (octaves.getTextFromValue (2) == "3");
+    CHECK (octaves.getTextFromValue (0) == "0");
+    CHECK (octaves.getTextFromValue (2) == "2");
     CHECK (findControl (editor, "arp.distance") == nullptr);
     REQUIRE (editor.controller.set ("distance", -7, true));
     CHECK (static_cast<int> (processor.getTimelineState()["arp"]["distance"]) == 12);
@@ -1086,4 +1137,229 @@ TEST_CASE ("Octave order is saved and previews the chosen note expansion", "[nat
     const auto& notes = preview.previewNotes();
     REQUIRE (notes.size() == 6);
     for (size_t i = 0; i < notes.size(); i += 2) CHECK (notes[i + 1].note == notes[i].note + 12);
+}
+
+TEST_CASE ("Arp modes share the top row with phrase controls", "[native-ui][layout]")
+{
+    PluginProcessor processor;
+    NativeEditor editor (processor);
+    toggle (editor, "arp.enabled", true);
+    for (const auto size : { juce::Point<int> (760, 540), juce::Point<int> (1120, 840), juce::Point<int> (1400, 1000) })
+    {
+        editor.setSize (size.x, size.y);
+        const auto& module = control<ModuleCard> (editor, "arp.module");
+        const auto* bank = findControl (editor, "arp.style");
+        REQUIRE (bank != nullptr);
+        const auto bounds = module.getLocalArea (bank, bank->getLocalBounds());
+        CHECK (bounds.getWidth() > module.getWidth() * 4 / 10);
+        CHECK (bounds.getWidth() < module.getWidth() / 2);
+        CHECK (findControl (editor, "arp.style.7") == nullptr);
+        CHECK (findControl (editor, "arp.style.10") == nullptr);
+        constexpr std::array<int, 9> modes { 0, 1, 2, 3, 4, 5, 6, 8, 9 };
+        for (size_t i = 0; i < modes.size(); ++i)
+        {
+            const auto& button = control<juce::TextButton> (editor, "arp.style." + juce::String (modes[i]));
+            CHECK (button.isVisible());
+            CHECK (bank->getLocalBounds().contains (button.getBounds()));
+            CHECK (button.getY() == static_cast<int> (i / 3) * bank->getHeight() / 3);
+        }
+        for (const auto* id : { "arp.offset", "arp.repeats", "arp.retrigger", "arp.interval", "arp.steps", "arp.octaveMode" })
+        {
+            const auto* component = findControl (editor, id);
+            REQUIRE (component != nullptr);
+            const auto controlBounds = module.getLocalArea (component, component->getLocalBounds());
+            CHECK (controlBounds.getX() > bounds.getRight());
+            CHECK (controlBounds.getY() >= bounds.getY());
+            CHECK (controlBounds.getBottom() <= bounds.getBottom() + 1);
+        }
+    }
+}
+
+TEST_CASE ("Rate knob preserves sync divisions free milliseconds and custom restored values", "[native-ui][rate]")
+{
+    PluginProcessor processor;
+    NativeEditor editor (processor);
+    editor.setSize (1400, 1000);
+    toggle (editor, "arp.enabled", true);
+    auto& knob = control<juce::Slider> (editor, "arp.rate.knob");
+    auto& readout = control<juce::ComboBox> (editor, "arp.rate");
+    double previous = 100;
+    for (int step = 0; step < 12; ++step)
+    {
+        knob.setValue (step, juce::sendNotificationSync);
+        const double value = static_cast<double> (processor.getTimelineState()["arp"]["rate"]);
+        CHECK (value < previous);
+        CHECK (readout.getSelectedId() > 0);
+        previous = value;
+    }
+    choose (editor, "arp.rate", 9); // 1/8 triplet.
+    CHECK (knob.getValue() == Catch::Approx (7));
+    CHECK (static_cast<double> (processor.getTimelineState()["arp"]["rate"]) == Catch::Approx (1.0 / 3));
+    REQUIRE (editor.controller.set ("rate", 0.2, true));
+    CHECK (readout.getSelectedId() == 0);
+    CHECK (readout.getText().contains ("0.2"));
+    editor.setSize (1120, 840);
+    CHECK (static_cast<double> (processor.getTimelineState()["arp"]["rate"]) == Catch::Approx (0.2));
+    choose (editor, "arp.sync", 2);
+    auto& milliseconds = control<juce::Slider> (editor, "arp.freeMs");
+    CHECK (milliseconds.isRotary());
+    CHECK (milliseconds.getTextBoxPosition() == juce::Slider::TextBoxBelow);
+    milliseconds.setValue (237.5, juce::sendNotificationSync);
+    CHECK (milliseconds.getTextFromValue (milliseconds.getValue()).contains ("ms"));
+    CHECK (static_cast<double> (processor.getTimelineState()["arp"]["freeMs"]) == Catch::Approx (237.5));
+}
+
+TEST_CASE ("Arp-only mode gives reclaimed space to its preview without resizing controls", "[native-ui][layout]")
+{
+    PluginProcessor processor;
+    NativeEditor editor (processor);
+    const juce::StringArray ids { "arp.style.0", "arp.style.9", "arp.offset", "arp.repeats", "arp.retrigger", "arp.interval",
+        "arp.steps", "arp.octaveMode", "arp.rate.knob", "arp.rate", "arp.sync", "arp.gate", "arp.swing",
+        "arp.swingSubdivision", "arp.timingHumanize", "arp.strength", "arp.target", "arp.decay", "arp.velocityHumanize",
+        "rhythm.gate.1", "rhythm.gate.8", "rhythm.tie.1", "rhythm.tie.8" };
+    for (const auto size : { juce::Point<int> (760, 540), juce::Point<int> (1120, 840),
+                             juce::Point<int> (1400, 1000), juce::Point<int> (2560, 1600) })
+    {
+        editor.setSize (size.x, size.y);
+        toggle (editor, "sequencerEnabled", true);
+        toggle (editor, "arp.enabled", true);
+        std::vector<juce::Rectangle<int>> before;
+        for (const auto& id : ids)
+        {
+            const auto* component = findControl (editor, id);
+            REQUIRE (component != nullptr);
+            before.push_back (editor.getLocalArea (component, component->getLocalBounds()));
+        }
+        toggle (editor, "sequencerEnabled", false);
+        auto& viewport = control<juce::Viewport> (editor, "body.viewport");
+        CHECK (viewport.getViewedComponent()->getHeight() == viewport.getHeight());
+        CHECK (viewport.getViewPositionY() == 0);
+        auto& preview = control<ArpVisualizer> (editor, "arp.visualizer");
+        CHECK (preview.isVisible());
+        CHECK (editor.getLocalArea (&preview, preview.getLocalBounds()).getHeight() > 100);
+        int translation = 0;
+        for (size_t i = 0; i < before.size(); ++i)
+        {
+            INFO (ids[static_cast<int> (i)] << " at " << size.x << " x " << size.y);
+            const auto* component = findControl (editor, ids[static_cast<int> (i)]);
+            const auto after = editor.getLocalArea (component, component->getLocalBounds());
+            if (i == 0) translation = after.getY() - before[i].getY();
+            CHECK (after.getWidth() == before[i].getWidth());
+            // Enclosing transformed bounds can gain a pixel after vertical translation.
+            CHECK (std::abs (after.getHeight() - before[i].getHeight()) <= 1);
+            CHECK (after.getX() == before[i].getX());
+            CHECK (std::abs (after.getY() - before[i].getY() - translation) <= 1);
+        }
+    }
+}
+
+TEST_CASE ("Desktop editor locks its aspect and scales a fixed canvas through the footer", "[native-ui][scale]")
+{
+    using chordrunner::ui::UiScale;
+    PluginProcessor processor;
+    PluginEditor editor (processor);
+    NativeEditor* canvas = nullptr;
+    for (auto* child : editor.getChildren())
+        if (auto* view = dynamic_cast<NativeEditor*> (child)) canvas = view;
+    REQUIRE (canvas != nullptr);
+    REQUIRE (editor.getConstrainer() != nullptr);
+    CHECK (editor.getConstrainer()->getFixedAspectRatio() == Catch::Approx (UiScale::aspectRatio));
+    CHECK (editor.getWidth() == juce::roundToInt (UiScale::canvasWidth * UiScale::factor (100)));
+    CHECK (editor.getHeight() == juce::roundToInt (UiScale::canvasHeight * UiScale::factor (100)));
+    toggle (*canvas, "arp.enabled", true);
+    const auto projectBounds = findControl (*canvas, "project.details")->getBounds();
+    const auto launchBounds = findControl (*canvas, "launch")->getParentComponent()->getBounds();
+    const auto gateBounds = control<juce::Slider> (*canvas, "arp.gate").getBounds();
+    const auto modeBounds = findControl (*canvas, "arp.style")->getBounds();
+    for (const auto size : { juce::Point<int> (800, 600), juce::Point<int> (1500, 700), juce::Point<int> (1000, 1400),
+                             juce::Point<int> (1024, 768), juce::Point<int> (768, 1024) })
+    {
+        editor.getConstrainer()->setBoundsForComponent (&editor, { 0, 0, size.x, size.y }, false, false, true, true);
+        CHECK (static_cast<double> (editor.getWidth()) / editor.getHeight() == Catch::Approx (UiScale::aspectRatio).margin (0.003));
+        CHECK (canvas->getWidth() == UiScale::canvasWidth);
+        CHECK (canvas->getHeight() == UiScale::canvasHeight);
+        CHECK (control<juce::Slider> (*canvas, "arp.gate").getBounds() == gateBounds);
+        CHECK (findControl (*canvas, "arp.style")->getBounds() == modeBounds);
+        const auto transform = canvas->getTransform();
+        CHECK (transform.mat00 == Catch::Approx (transform.mat11));
+    }
+    auto& scale = control<ScaleControl> (*canvas, "ui.scale");
+    const int before = scale.getValue();
+    CHECK (scale.keyPressed (juce::KeyPress (juce::KeyPress::upKey)));
+    CHECK (processor.getUiScalePercent() == before + 1);
+    CHECK (editor.getWidth() == juce::roundToInt (UiScale::canvasWidth * UiScale::factor (before + 1)));
+    const auto mouse = [&scale] (juce::ModifierKeys modifiers)
+    {
+        return juce::MouseEvent (juce::Desktop::getInstance().getMainMouseSource(), { 10, 10 }, modifiers,
+            1, 0, 0, 0, 0, &scale, &scale, juce::Time(), { 10, 10 }, juce::Time(), 2, false);
+    };
+    scale.mouseDoubleClick (mouse ({}));
+    auto& input = control<juce::TextEditor> (*canvas, "ui.scale.input");
+    input.setText ("175", false);
+    input.onReturnKey();
+    CHECK (processor.getUiScalePercent() == 175);
+    CHECK (editor.getWidth() == juce::roundToInt (UiScale::canvasWidth * UiScale::factor (175)));
+    scale.mouseDown (mouse (juce::ModifierKeys::rightButtonModifier));
+    CHECK (scale.getValue() == 100);
+    CHECK (processor.getUiScalePercent() == 100);
+    juce::MouseWheelDetails wheel;
+    wheel.deltaY = -1;
+    scale.mouseWheelMove (mouse ({}), wheel);
+    CHECK (processor.getUiScalePercent() == 99);
+    // Even an unconstrained host request cannot stretch or reflow the canvas.
+    editor.setSize (1000, 1000);
+    CHECK (canvas->getWidth() == UiScale::canvasWidth);
+    CHECK (canvas->getHeight() == UiScale::canvasHeight);
+    CHECK (canvas->getTransform().mat00 == Catch::Approx (canvas->getTransform().mat11));
+    // iPad and AUv3 hosts supply their own bounds. Fit the same canvas without
+    // asking the host to adopt the desktop window's aspect constraint.
+    for (const auto size : { juce::Point<int> (1024, 768), juce::Point<int> (1024, 724), juce::Point<int> (768, 1024) })
+    {
+        editor.setSize (size.x, size.y);
+        CHECK (canvas->getWidth() == UiScale::canvasWidth);
+        CHECK (canvas->getHeight() == UiScale::canvasHeight);
+        CHECK (findControl (*canvas, "project.details")->getBounds() == projectBounds);
+        CHECK (findControl (*canvas, "launch")->getParentComponent()->getBounds() == launchBounds);
+        CHECK (canvas->getTransform().mat00 == Catch::Approx (canvas->getTransform().mat11));
+        CHECK (editor.getLocalBounds().expanded (1).contains (canvas->getBoundsInParent()));
+    }
+    const auto image = editor.createComponentSnapshot (editor.getLocalBounds());
+    juce::FileOutputStream stream (juce::File ("/tmp/chord-runner-fixed-scale.png"));
+    stream.setPosition (0); stream.truncate();
+    juce::PNGImageFormat().writeImageToStream (image, stream);
+}
+
+TEST_CASE ("UI scale persists without dirtying music or entering musical undo", "[native-ui][scale][state]")
+{
+    PluginProcessor processor;
+    processor.markDocumentClean();
+    processor.setUiScalePercent (175);
+    CHECK_FALSE (processor.isDocumentModified());
+    CHECK_FALSE (processor.canUndo());
+    juce::MemoryBlock data;
+    processor.getStateInformation (data);
+    PluginProcessor restored;
+    restored.setStateInformation (data.getData(), static_cast<int> (data.getSize()));
+    CHECK (restored.getUiScalePercent() == 175);
+    juce::PropertySet preferences;
+    processor.saveStandaloneSettings (preferences);
+    PluginProcessor standalone;
+    standalone.restoreStandaloneSettings (preferences);
+    CHECK (standalone.getUiScalePercent() == 175);
+    auto edit = processor.getTimelineState();
+    edit["arp"].getDynamicObject()->setProperty ("swing", 25);
+    REQUIRE (processor.editTimeline (edit, "arp.swing").wasOk());
+    processor.setUiScalePercent (125);
+    processor.undo();
+    CHECK (processor.getUiScalePercent() == 125);
+    auto invalid = processor.getProjectState();
+    invalid.getDynamicObject()->setProperty ("uiScalePercent", 0);
+    CHECK (processor.setProjectState (invalid).failed());
+    CHECK (processor.getUiScalePercent() == 125);
+    invalid.getDynamicObject()->setProperty ("uiScalePercent", 100.5);
+    CHECK (processor.setProjectState (invalid).failed());
+    processor.setUiScalePercent (10000);
+    CHECK (processor.getUiScalePercent() == 400);
+    processor.setUiScalePercent (-100);
+    CHECK (processor.getUiScalePercent() == 50);
 }

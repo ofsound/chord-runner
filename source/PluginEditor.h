@@ -13,6 +13,8 @@ public:
     void chooseProject (int action, std::function<void (juce::String)>);
 
 private:
+    void updateNativeSize();
+    bool applyingScale = false;
    #if JUCE_IOS
     void iosProjectAction (int, const juce::File&, std::function<void (juce::String)>);
    #endif

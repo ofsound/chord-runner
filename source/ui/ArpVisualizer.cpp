@@ -178,21 +178,18 @@ namespace chordrunner::ui
                                                                    : 10)
                             * magnitude;
         g.setFont (uiFont (10.0f));
-        for (double unit = 0; unit < unitSpan - tick * 0.2; unit += tick)
+        for (double unit = 0; unit <= unitSpan + tick * 1.0e-6; unit += tick)
         {
-            if (unit > 0 && xAt (unit / unitsPerBeat) > plot.getRight() - 110)
-                continue;
             g.setColour (muted);
-            g.drawText (juce::String (unit, unitSpan < 1 ? 2 : 1), static_cast<int> (xAt (unit / unitsPerBeat)), static_cast<int> (plot.getY()) - 18, 40, 14, juce::Justification::left);
+            const int labelX = static_cast<int> (juce::jmin (xAt (unit / unitsPerBeat), plot.getRight() - 40.0f));
+            g.drawText (juce::String (unit, unitSpan < 1 ? 2 : 1), labelX, static_cast<int> (plot.getY()) - 18, 40, 14, juce::Justification::left);
         }
-        g.setColour (settings.retrigger == 2 ? gold : mint);
-        g.drawText (timeText (beats), static_cast<int> (plot.getRight()) - 92, static_cast<int> (plot.getY()) - 18, 92, 14, juce::Justification::right);
         const double visibleSteps = beats / stepBeats;
         const int gridStride = juce::jmax (1, static_cast<int> (std::ceil (visibleSteps / juce::jmax (1.0f, plot.getWidth() / 10.0f))));
         for (int i = 0; i <= static_cast<int> (std::ceil (visibleSteps)); i += gridStride)
         {
             const double at = i * stepBeats;
-            if (at > beats + 1.0e-8)
+            if (at >= beats - 1.0e-8)
                 break;
             const float x = xAt (at);
             g.setColour (ink.withAlpha (0.1f));
@@ -297,9 +294,6 @@ namespace chordrunner::ui
             g.drawRoundedRectangle (noteBounds (notes[static_cast<size_t> (hovered)]).expanded (1), 3, 1);
         }
         g.restoreState();
-        g.setColour (settings.retrigger == 2 ? gold : mint);
-        const float dash[] { 3, 4 };
-        g.drawDashedLine ({ plot.getRight(), plot.getY(), plot.getRight(), plot.getBottom() }, dash, 2);
         if (notes.empty())
         {
             g.setColour (muted);

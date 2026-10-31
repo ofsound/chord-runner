@@ -62,7 +62,7 @@ TEST_CASE ("Every glossary spelling produces its advertised chord formula", "[pa
                     CHECK (static_cast<int> ((*intervals)[i]) == expected[static_cast<size_t> (i)] - 60);
                 }
                 CHECK (chord.beats == Catch::Approx (juce::String (duration).isEmpty() ? 4.0 : juce::String (duration).substring (1) == "2" ? 8.0 : 2.0));
-                CHECK (juce::String::fromUTF8 (chord.label.data()) == "C" + suffix + duration);
+                CHECK (juce::String::fromUTF8 (chord.label.data()) == "C" + entry["suffix"].toString());
             }
         }
     }

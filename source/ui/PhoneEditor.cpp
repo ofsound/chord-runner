@@ -12,26 +12,22 @@ void NativeEditor::restoreDesktopParents()
         if (component->getParentComponent() != this) addAndMakeVisible (component);
         component->setVisible (true);
     }
-    for (auto* component : std::initializer_list<juce::Component*> { &sequencer, &progression, &apply, &message, &fit, &voicingButton, &inversionsLabel, &timelineViewport,
+    for (auto* component : std::initializer_list<juce::Component*> { &sequencer, &progression, &apply, &message, &voicingSelector, &timelineViewport,
              &arpeggiator, &style, &offset, &repeats, &rateMode, &gate, &swing, &swingSubdivision, &steps, &octaveOrder, &retrigger, &interval, &hold,
              &strength, &target, &decay, &velocityHumanize, &timingHumanize, &projectTitle, &projectMenu, &undoButton, &redoButton, &mutePad })
         component->setVisible (true);
-    message.setVisible (controller.error.isNotEmpty() || controller.dirty());
+    message.setVisible (controller.error.isNotEmpty());
     for (auto& group : groups) group.setVisible (true);
     for (auto& pad : pads) pad.setVisible (true);
     for (auto& tab : phoneTabs) tab.setVisible (false);
     phonePreview.setVisible (false);
     performanceInfo.setVisible (false);
-    pitchHint.setVisible (true); humanizeHint.setVisible (true);
     rhythmPanel.setVisible (false);
     viewport.setVisible (true);
     viewport.setScrollBarsShown (true, false);
-    sequenceModule.setTitleText ("SEQ");
-    arpModule.setTitleText ("ARP");
+    sequenceModule.setTitleText ("SEQUENCER");
+    arpModule.setTitleText ("ARPEGGIATOR");
     mutePad.setButtonText ("M");
-    panicButton.setButtonText ("All notes off");
-    fit.setVisible (true);
-    fitNotes = fit.getToggleState();
     rate.setVisible (static_cast<bool> (controller.state["arp"]["sync"]));
     freeRate.setVisible (! rate.isVisible());
     for (auto* number : numbers)
@@ -41,12 +37,16 @@ void NativeEditor::restoreDesktopParents()
 void NativeEditor::layoutPhone()
 {
     if (! phoneLayout) return;
+    scaleControl.setVisible (false);
+    rate.setRotary (false);
+    for (auto* control : { &offset, &repeats, &steps, &freeRate, &gate, &swing, &timingHumanize, &strength, &target, &decay, &velocityHumanize })
+        control->slider.setSliderStyle (juce::Slider::LinearHorizontal);
     arpVisualizer.setVisible (false);
     phonePreview.setVisible (false);
-    pitchHint.setVisible (false); humanizeHint.setVisible (false);
     const int w = getWidth(), h = getHeight();
     const bool landscape = w > h;
     const bool perform = phonePage == 0, sequence = phonePage == 1, arpPage = phonePage == 2;
+    const bool localTransport = ! controller.processor.isHosted();
     const int margin = 10;
     const int bodyTop = landscape ? 56 : 108;
     const auto body = juce::Rectangle<int> (margin, bodyTop, juce::jmax (1, w - margin * 2), juce::jmax (1, h - bodyTop - 52));
@@ -79,13 +79,15 @@ void NativeEditor::layoutPhone()
         tab.setVisible (true);
     }
     auto footer = getLocalBounds().removeFromBottom (44).reduced (margin, 2);
-    play.setBounds (footer.removeFromLeft (36)); footer.removeFromLeft (8);
+    play.setVisible (localTransport);
+    if (localTransport)
+    {
+        play.setBounds (footer.removeFromLeft (36)); footer.removeFromLeft (8);
+    }
     tipsButton.setBounds (footer.removeFromRight (36)); footer.removeFromRight (4);
     glossary.setBounds (footer.removeFromRight (36)); footer.removeFromRight (4);
-    panicButton.setButtonText (w < 360 ? "Notes off" : "All notes off");
     panicButton.setBounds (footer.removeFromRight (w < 360 ? 80 : 100)); footer.removeFromRight (4);
     midiActivity.setBounds (footer.removeFromRight (juce::jmin (132, footer.getWidth()))); footer.removeFromRight (4);
-    status.setBounds (footer);
     rhythmPanel.setHorizontal (false);
     rhythmPanel.setVisible (phonePage == 4);
     rhythmPanel.setEnabled (static_cast<bool> (controller.state["arp"]["enabled"]));
@@ -104,12 +106,10 @@ void NativeEditor::layoutPhone()
     mutePad.setVisible (perform);
     mutePad.setButtonText ("Mute / E1");
     launch.setVisible (perform);
-    tempo.setVisible (perform);
-    clock.setVisible (perform);
+    tempo.setVisible (perform && localTransport);
+    clock.setVisible (perform && localTransport);
     performanceInfo.setVisible (perform);
-    fit.setVisible (false);
     glossary.setVisible (true);
-    fitNotes = true;
     for (auto* number : numbers)
         number->slider.setTextBoxStyle (juce::Slider::TextBoxRight, false, 74, 36);
     if (perform)
@@ -121,8 +121,11 @@ void NativeEditor::layoutPhone()
             auto settings = area.removeFromRight (juce::jmax (156, area.getWidth() / 4));
             area.removeFromRight (12);
             const int controlH = juce::jlimit (44, 56, (body.getHeight() - 58) / 3);
-            tempo.setBounds (settings.removeFromTop (controlH)); settings.removeFromTop (3);
-            clock.setBounds (settings.removeFromTop (controlH)); settings.removeFromTop (3);
+            if (localTransport)
+            {
+                tempo.setBounds (settings.removeFromTop (controlH)); settings.removeFromTop (3);
+                clock.setBounds (settings.removeFromTop (controlH)); settings.removeFromTop (3);
+            }
             launch.setBounds (settings.removeFromTop (controlH)); settings.removeFromTop (6);
             mutePad.setBounds (settings.removeFromTop (juce::jmin (44, settings.getHeight())));
             performanceInfo.setBounds (area.removeFromTop (38)); area.removeFromTop (6);
@@ -145,10 +148,13 @@ void NativeEditor::layoutPhone()
                 pads[static_cast<size_t> (i)].setBounds (grid.getX() + (i % 4) * cellW + (cellW - side) / 2,
                     grid.getY() + (i / 4) * cellH, side, side);
             area.removeFromTop (6);
-            auto timing = area.removeFromTop (60);
-            tempo.setBounds (timing.removeFromLeft (timing.getWidth() / 2).withTrimmedRight (10));
-            clock.setBounds (timing);
-            area.removeFromTop (6);
+            if (localTransport)
+            {
+                auto timing = area.removeFromTop (60);
+                tempo.setBounds (timing.removeFromLeft (timing.getWidth() / 2).withTrimmedRight (10));
+                clock.setBounds (timing);
+                area.removeFromTop (6);
+            }
             auto launching = area.removeFromTop (60);
             launch.setBounds (launching.removeFromLeft (launching.getWidth() / 2).withTrimmedRight (10));
             mutePad.setBounds (launching.withTrimmedTop (18));
@@ -162,36 +168,18 @@ void NativeEditor::layoutPhone()
         if (timelineViewport.getParentComponent() != &sequenceModule) sequenceModule.addAndMakeVisible (timelineViewport);
         const int cw = body.getWidth(), ch = body.getHeight();
         sequencer.setBounds (10, 2, 32, 32);
-        inversionsLabel.setVisible (true);
-        voicingButton.setVisible (true);
-        fit.setVisible (true);
+        voicingSelector.setVisible (true);
         octave.setVisible (true); velocity.setVisible (true);
-        progression.setFont (uiFont (24.0f));
-        progression.setBorder (juce::BorderSize<int> (0, 14, 0, 14));
-        const int entryHeight = landscape ? 40 : 56;
-        progression.setBounds (12, 42, cw - 102, entryHeight);
-        apply.setBounds (cw - 80, 42, 68, entryHeight);
+        const int entryHeight = 40;
+        progression.setBounds (12, 42, cw - 74, entryHeight);
+        apply.setBounds (cw - 52, 42, 40, entryHeight);
         const int dockBottom = ch - 12 - (message.isVisible() ? 26 : 0);
-        const int dockHeight = landscape ? 48 : 102;
+        const int dockHeight = landscape ? 88 : 102;
         const int dockTop = dockBottom - dockHeight;
-        auto actions = juce::Rectangle<int> (cw - 12 - (landscape ? 366 : 160),
-            landscape ? dockTop : dockTop + 54, landscape ? 366 : 160, 48);
-        if (landscape)
-        {
-            velocity.setBounds (actions.removeFromLeft (110)); actions.removeFromLeft (8);
-            octave.setBounds (actions.removeFromLeft (70)); actions.removeFromLeft (8);
-        }
-        else
-        {
-            auto values = juce::Rectangle<int> (cw - 200, dockTop, 188, 48);
-            velocity.setBounds (values.removeFromLeft (110)); values.removeFromLeft (8);
-            octave.setBounds (values);
-        }
-        auto inversions = actions.removeFromLeft (110);
-        inversionsLabel.setBounds (inversions.removeFromTop (16));
-        voicingButton.setBounds (inversions);
-        actions.removeFromLeft (6);
-        fit.setBounds (actions.withTrimmedTop (16));
+        voicingSelector.setBounds (12, dockTop, cw - 24, 32);
+        auto values = juce::Rectangle<int> (12, dockTop + 40, cw - 24, 48);
+        velocity.setBounds (values.removeFromLeft (110)); values.removeFromLeft (8);
+        octave.setBounds (values.removeFromLeft (70));
         timelineViewport.setBounds (12, 50 + entryHeight, cw - 24, juce::jmax (1, dockTop - entryHeight - 58));
         message.setBounds (12, ch - 30, cw - 24, 24);
         timelineViewport.setVisible (true);
@@ -202,7 +190,8 @@ void NativeEditor::layoutPhone()
         // The same native controls and controller serve all layouts.
         arpeggiator.setVisible (true);
         arpeggiator.setBounds (10, 2, 32, 32);
-        hold.setVisible (false);
+        hold.setVisible (arpPage);
+        hold.setBounds (104, 8, 62, 21);
         if (phonePage == 4)
         {
             arpModule.setTitleText ("");
@@ -214,8 +203,8 @@ void NativeEditor::layoutPhone()
         }
         std::vector<juce::Component*> controls;
         if (arpPage)
-            controls = { &style, &rateMode, static_cast<bool> (controller.state["arp"]["sync"]) ? static_cast<juce::Component*> (&rate) : &freeRate,
-                &gate, &steps, &octaveOrder, &offset, &repeats, &retrigger, &interval, &hold };
+            controls = { &rateMode, static_cast<bool> (controller.state["arp"]["sync"]) ? static_cast<juce::Component*> (&rate) : &freeRate,
+                &gate, &steps, &octaveOrder, &offset, &repeats, &retrigger, &interval };
         else
             controls = { &swing, &swingSubdivision, &velocityHumanize, &timingHumanize, &strength, &target, &decay };
         const int columns = landscape ? (arpPage ? 5 : 4) : 2;
@@ -227,8 +216,7 @@ void NativeEditor::layoutPhone()
         phonePreview.setVisible (previewAvailable && ! inlinePreview);
         if (previewAvailable && ! inlinePreview)
         {
-            arpModule.setTitleText ("");
-            phonePreview.setBounds (64, 4, juce::jmin (128, body.getWidth() - 200), 40);
+            phonePreview.setBounds (178, 4, juce::jmin (128, body.getWidth() - 186), 40);
             phonePreview.setButtonText (focusPreview ? "Show controls" : "Show preview");
         }
         if (inlinePreview || focusPreview)
@@ -242,6 +230,12 @@ void NativeEditor::layoutPhone()
             timelineViewport.setVisible (false);
             return;
         }
+        if (arpPage)
+        {
+            style.setVisible (true);
+            style.setBounds (grid.removeFromTop (landscape ? 48 : 104));
+            grid.removeFromTop (6);
+        }
         const int cellW = grid.getWidth() / columns;
         const int cellH = juce::jmin (104, grid.getHeight() / rows);
         for (size_t i = 0; i < controls.size(); ++i)
@@ -250,7 +244,6 @@ void NativeEditor::layoutPhone()
             control->setVisible (true);
             control->setBounds (grid.getX() + static_cast<int> (i) % columns * cellW,
                 grid.getY() + static_cast<int> (i) / columns * cellH, cellW - 8, cellH - 6);
-            if (control == &hold) control->setBounds (control->getBounds().withTrimmedTop (18).withHeight (juce::jmin (36, juce::jmax (20, cellH - 24))));
         }
         freeRate.slider.setSliderStyle (juce::Slider::LinearHorizontal);
         interval.slider.setSliderStyle (juce::Slider::LinearHorizontal);
@@ -259,7 +252,7 @@ void NativeEditor::layoutPhone()
     if ((sequence && sequenceFold == 1) || (arpPage && arpFold == 1))
     {
         auto& module = sequence ? sequenceModule : arpModule;
-        for (auto* child : module.getChildren()) child->setVisible (child == (sequence ? &sequencer : &arpeggiator));
+        for (auto* child : module.getChildren()) child->setVisible (child == (sequence ? &sequencer : &arpeggiator) || (arpPage && child == &hold));
         module.setSize (module.getWidth(), ModuleCard::headerHeight);
     }
     updateTimelineSize();

@@ -22,7 +22,7 @@ namespace chordrunner::ui
         g.fillRoundedRectangle (r, 3);
         g.setColour ((on ? accent.brighter (0.2f) : juce::Colour (0xff41525b)).withAlpha (inCycle ? 0.5f : 0.2f));
         g.drawRoundedRectangle (r, 3, 0.8f);
-        auto font = juce::Font (uiFont (13.0f, juce::Font::bold));
+        auto font = juce::Font (uiFont (owner->inlineLane ? 30.0f : 18.0f, juce::Font::bold));
         const float available = static_cast<float> (juce::jmax (1, getWidth() - 4));
         const float width = juce::GlyphArrangement::getStringWidth (font, getButtonText());
         if (width > available)
@@ -80,7 +80,8 @@ namespace chordrunner::ui
         mask = ties ? 0 : 15;
         setComponentID (ties ? "rhythm.tie" : "rhythm.gate");
         power.setComponentID (getComponentID() + ".enabled");
-        power.setButtonText (ties ? "Tie sequence power" : "Gate sequence power");
+        power.setButtonText (ties ? "Tie sequencer power" : "Gate sequencer power");
+        power.setHeading (ties ? "TIE SEQUENCER" : "GATE SEQUENCER");
         power.setTooltip (power.getButtonText());
         power.setClickingTogglesState (true);
         power.setFaceDiameter (18.0f);
@@ -248,15 +249,12 @@ namespace chordrunner::ui
     {
         if (inlineLane)
         {
-            g.setColour (juce::Colour (0xff151e23));
+            g.setColour (juce::Colour (0xff27313a));
             g.fillRoundedRectangle (getLocalBounds().toFloat(), 6);
         }
-        g.setColour (accentGreen.withAlpha (isEnabled() ? 1.0f : 0.4f));
-        g.setFont (uiFont (sectionHeadingSize, juce::Font::bold));
-        g.drawText (tieLane ? "TIE SEQUENCE" : "GATE SEQUENCE", 44, 5, getWidth() - 52, 36, juce::Justification::centredLeft);
         const float alpha = (isEnabled() ? 1.0f : 0.35f) * (power.getToggleState() ? 1.0f : 0.5f);
         juce::Path lit;
-        for (int row = 0; row < 16 / columns(); ++row)
+        for (int row = 0; row < visibleSteps() / columns(); ++row)
         {
             const int first = row * columns(), last = juce::jmin (length, first + columns()) - 1;
             if (last < first)
@@ -281,14 +279,23 @@ namespace chordrunner::ui
     void CycleLane::resized()
     {
         const int count = columns();
-        const int rows = 16 / count;
-        cellStride = juce::jmax (1, (getWidth() - 20) / count);
-        cellTop = inlineLane ? 47 : 46;
-        rowStride = inlineLane ? juce::jmax (20, juce::jmin (32, (getHeight() - 50) / rows))
+        const int rows = visibleSteps() / count;
+        const auto heading = tieLane ? "TIE SEQUENCER" : "GATE SEQUENCER";
+        const int labelWidth = static_cast<int> (std::ceil (juce::GlyphArrangement::getStringWidth (
+            juce::Font (uiFont (inlineLane ? inlineHeadingSize : sectionHeadingSize, juce::Font::bold)), heading))) + 58;
+        cellLeft = inlineLane ? labelWidth + 16 : 10;
+        cellTop = inlineLane ? 10 : 46;
+        cellStride = juce::jmax (1, (getWidth() - cellLeft - 10) / count);
+        rowStride = inlineLane ? juce::jmax (20, (getHeight() - 20) / rows)
                                : juce::jmax (20, juce::jmin (48, (getHeight() - 66) / rows));
-        power.setBounds (4, 5, 36, 36);
+        power.setBounds (inlineLane ? juce::Rectangle<int> (4, 0, labelWidth, getHeight())
+                                    : juce::Rectangle<int> (4, 5, getWidth() - 8, 36));
         for (int i = 0; i < 16; ++i)
-            cells[static_cast<size_t> (i)].setBounds (10 + i % count * cellStride, cellTop + i / count * rowStride, cellStride - 4, rowStride - 3);
+        {
+            auto& cell = cells[static_cast<size_t> (i)];
+            cell.setVisible (i < visibleSteps());
+            cell.setBounds (cellLeft + i % count * cellStride, cellTop + i / count * rowStride, cellStride - 4, rowStride - 3);
+        }
         const auto end = cells[static_cast<size_t> (length - 1)].getBounds();
         handle.setBounds (end.getRight() - 4, end.getY(), 9, end.getHeight());
         handle.toFront (false);
@@ -320,8 +327,8 @@ namespace chordrunner::ui
             return;
         }
         const auto point = event.getEventRelativeTo (&owner).position;
-        const int row = juce::jlimit (0, 16 / owner.columns() - 1, static_cast<int> (std::floor ((point.y - owner.cellTop) / owner.rowStride)));
-        const int count = juce::jlimit (1, 16, row * owner.columns() + static_cast<int> (std::ceil ((point.x - 8) / owner.cellStride)));
+        const int row = juce::jlimit (0, owner.visibleSteps() / owner.columns() - 1, static_cast<int> (std::floor ((point.y - owner.cellTop) / owner.rowStride)));
+        const int count = juce::jlimit (1, owner.visibleSteps(), row * owner.columns() + static_cast<int> (std::ceil ((point.x - owner.cellLeft + 2) / owner.cellStride)));
         if (count != owner.length)
         {
             owner.length = count;
@@ -347,7 +354,7 @@ namespace chordrunner::ui
         if (delta == 0 || dragging)
             return false;
         owner.beginGesture();
-        owner.length = juce::jlimit (1, 16, owner.length + delta);
+        owner.length = juce::jlimit (1, owner.visibleSteps(), owner.length + delta);
         owner.commit();
         owner.endGesture();
         return true;

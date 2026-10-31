@@ -1,4 +1,5 @@
 #pragma once
+#include "ScaleControl.h"
 #include "EditorController.h"
 #include "ModulePower.h"
 #include "RhythmEditor.h"
@@ -15,7 +16,6 @@ public:
     void resized() override
     {
         finishDrag();
-        lengthReadout.setBounds (juce::jmax (0, getWidth() - 110), 2, 106, 20);
     }
     void visibilityChanged() override
     {
@@ -30,12 +30,9 @@ public:
     void mouseUp (const juce::MouseEvent&) override;
     bool keyPressed (const juce::KeyPress&) override;
     int selectedChord() const { return selected; }
-    void refreshLength();
 
 private:
     EditorController& controller;
-    juce::Label lengthReadout;
-    int lengthEditRevision = -1;
     int selected = 0, previewRevision = -1;
     std::vector<chordrunner::PreviewNote> outputPreview;
     int gridLow = 48, gridHigh = 84, dragLow = 48, dragHigh = 84;
@@ -83,7 +80,8 @@ private:
 class ModuleCard final : public juce::Component
 {
 public:
-    static constexpr int headerHeight = 36;
+    static constexpr int headerHeight = 32;
+    static constexpr int verticalMargin = 16, moduleGap = 28;
     explicit ModuleCard (juce::String name) : title (std::move (name)) {}
     void paint (juce::Graphics&) override;
     void mouseDoubleClick (const juce::MouseEvent& event) override
@@ -94,6 +92,10 @@ public:
     void setTitleText (juce::String value) { title = std::move (value); repaint(); }
 private:
     juce::String title;
+    // Keep the blur caches across paints; only geometry/scale changes rebuild them.
+    melatonin::InnerShadow rimLight { juce::Colours::white.withAlpha (0.18f), 4, { 0, 1 } };
+    melatonin::InnerShadow rimShade { juce::Colours::black.withAlpha (0.28f), 7, { 0, -2 } };
+    melatonin::DropShadow headerLift { juce::Colours::black.withAlpha (0.32f), 5, { 0, 2 } };
 };
 
 class PerformanceLook final : public juce::LookAndFeel_V4
@@ -104,11 +106,13 @@ public:
     void drawToggleButton (juce::Graphics&, juce::ToggleButton&, bool, bool) override;
     void drawButtonBackground (juce::Graphics&, juce::Button&, const juce::Colour&, bool, bool) override;
     void drawLinearSlider (juce::Graphics&, int, int, int, int, float, float, float, juce::Slider::SliderStyle, juce::Slider&) override;
+    void drawRotarySlider (juce::Graphics&, int, int, int, int, float, float, float, juce::Slider&) override;
     void drawComboBox (juce::Graphics&, int, int, bool, int, int, int, int, juce::ComboBox&) override;
     juce::Font getComboBoxFont (juce::ComboBox&) override;
     void positionComboBoxText (juce::ComboBox&, juce::Label&) override;
     void drawGroupComponentOutline (juce::Graphics&, int, int, const juce::String&, const juce::Justification&, juce::GroupComponent&) override;
     void drawLabel (juce::Graphics&, juce::Label&) override;
+    juce::Label* createSliderTextBox (juce::Slider&) override;
     juce::Slider::SliderLayout getSliderLayout (juce::Slider&) override;
 };
 
@@ -124,6 +128,18 @@ public:
     void paintButton (juce::Graphics&, bool, bool) override;
 };
 
+class VoicingSelector final : public juce::Component
+{
+public:
+    VoicingSelector();
+    void resized() override;
+    void setMode (int);
+    std::function<void (int)> onChange;
+
+private:
+    std::array<juce::TextButton, 4> buttons;
+};
+
 class NativeEditor final : public juce::Component, private juce::Timer, private juce::KeyListener
 {
 public:
@@ -135,6 +151,8 @@ public:
     bool keyPressed (const juce::KeyPress&, juce::Component*) override;
     EditorController controller;
     std::function<void (int)> chooseProject;
+    std::function<void()> preferredSizeChanged;
+    void showUiScalePercent (int value) { lastUiScalePercent = value; scaleControl.setValue (value); }
     void sync();
 
 private:
@@ -151,14 +169,51 @@ private:
         ValueSlider slider;
         juce::TextButton decrease { "-" }, increase { "+" };
     };
-    struct ChoiceControl final : juce::Component
+    struct ChoiceControl : juce::Component
     {
         ChoiceControl (const juce::String&, const juce::String&, const juce::StringArray&);
         void resized() override;
         juce::Label label;
         juce::ComboBox combo;
     };
+    struct RetriggerControl final : juce::Component
+    {
+        RetriggerControl();
+        void resized() override;
+        void setSelected (int);
+        juce::Label label;
+        std::array<juce::TextButton, 3> buttons;
+        std::function<void (int)> onChange;
+    };
+    struct ButtonPairControl final : juce::Component
+    {
+        ButtonPairControl (const juce::String&, const juce::String&, const juce::StringArray&, int);
+        void resized() override;
+        void setSelected (int);
+        std::array<juce::TextButton, 2> buttons;
+        std::function<void (int)> onChange;
+        int preferredWidth;
+    };
+    struct RateControl final : ChoiceControl
+    {
+        using ChoiceControl::ChoiceControl;
+        void resized() override;
+        void setRotary (bool value) { rotary = value; knob.setVisible (value); resized(); }
+        juce::Slider knob;
+        bool rotary = false;
+    };
+    struct PhraseControl final : juce::Component
+    {
+        PhraseControl();
+        void resized() override;
+        void setSelected (int);
+        std::function<void (int)> onChange;
+        static constexpr std::array<int, 9> modes { 0, 1, 2, 3, 4, 5, 6, 8, 9 };
+        std::array<juce::TextButton, modes.size()> buttons;
+    };
     PerformanceLook look;
+    ScaleControl scaleControl;
+    int lastUiScalePercent = -1;
     std::unique_ptr<juce::TooltipWindow> tooltips;
     struct MidiActivity final : juce::Component
     {
@@ -174,7 +229,7 @@ private:
     std::array<juce::TextButton, 5> phoneTabs;
     RhythmEditor rhythmPanel { controller };
     juce::TextButton phonePreview { "Show preview" };
-    juce::Label performanceInfo, pitchHint, humanizeHint;
+    juce::Label performanceInfo;
     int phonePage = 0;
     bool phoneLayout = false;
     void layoutPhone();
@@ -187,7 +242,7 @@ private:
     int lastArpPreviewHeld = -1;
     int layoutModules = -1, sequenceFold = -1, arpFold = -1;
     bool sequenceFolded = false, arpFolded = false;
-    ModuleCard sequenceModule { "SEQ" }, arpModule { "ARP" };
+    ModuleCard sequenceModule { "SEQUENCER" }, arpModule { "ARPEGGIATOR" };
     std::array<PatternPad, 16> pads;
     struct IconButton final : juce::TextButton
     {
@@ -196,9 +251,8 @@ private:
     };
     juce::TextButton projectTitle { "Untitled Project" }, projectMenu { "Project" };
     IconButton undoButton { "Undo" }, redoButton { "Redo" };
-    juce::TextButton voicingButton { "Root position" };
-    juce::Label inversionsLabel;
-    juce::TextButton mutePad { "M" }, fit { "Fit" };
+    VoicingSelector voicingSelector;
+    juce::TextButton mutePad { "M" };
     ChoiceControl launch { "launch", "Launch", { "Immediate", "Next 1/16", "Next beat", "Next bar", "Pattern end" } };
     juce::TextButton open { "Open" }, save { "Save" };
     struct DictionaryButton final : juce::TextButton
@@ -207,39 +261,45 @@ private:
     } glossary;
     ModulePower sequencer { "SEQ power" }, arpeggiator { "ARP power" };
     juce::TextEditor progression;
-    juce::TextButton apply { "Apply" }, example { "Try Dm9 - G13b9 - Cmaj9" };
-    juce::Label message, status;
+    IconButton apply { "Apply" };
+    juce::TextButton example { "Try Dm9 - G13b9 - Cmaj9" };
+    juce::Label message;
     IconButton play { "Play" };
-    juce::TextButton panicButton { "All notes off" };
+    juce::TextButton panicButton { "MIDI PANIC" };
     NumberControl tempo { "tempo", "Tempo", 20, 300, 1, 120, " BPM" };
     ChoiceControl clock { "clock", "Clock", { "Internal", "Host sync" } };
     ChoiceControl octave { "octave", "Octave", { "0", "1", "2", "3", "4", "5", "6", "7", "8" } };
     NumberControl velocity { "velocity", "Velocity", 1, 127, 1, 100, "" };
-    ChoiceControl style { "arp.style", "Style", { "Up", "Down", "Up & Down", "Down & Up", "Converge", "Diverge", "Play Order", "Chord Trigger", "Random", "Random Other", "Random Once" } };
-    ChoiceControl rateMode { "arp.sync", "Rate mode", { "Sync", "Free" } };
-    ChoiceControl rate { "arp.rate", "Rate", { "1/1", "1/2", "1/4", "1/8", "1/16", "1/32", "1/64", "1/4 triplet", "1/8 triplet", "1/16 triplet", "1/8 dotted", "1/16 dotted" } };
+    PhraseControl style;
+    ButtonPairControl rateMode { "arp.sync", "Rate mode", { "Sync", "Free" }, 200 };
+    RateControl rate { "arp.rate", "Rate", { "1/1", "1/2", "1/4", "1/8", "1/16", "1/32", "1/64", "1/4 triplet", "1/8 triplet", "1/16 triplet", "1/8 dotted", "1/16 dotted" } };
     NumberControl freeRate { "arp.freeMs", "Rate", 10, 2000, 0.1, 100, " ms" };
     NumberControl gate { "arp.gate", "Gate", 1, 200, 0.1, 100, " %" };
     NumberControl swing { "arp.swing", "Swing", 0, 100, 1, 0, " %" };
-    ChoiceControl swingSubdivision { "arp.swingSubdivision", "Swing grid", { "1x", "2x", "4x" } };
+    ButtonPairControl swingSubdivision { "arp.swingSubdivision", "Swing grid", { "1x", "2x" }, 200 };
     NumberControl velocityHumanize { "arp.velocityHumanize", "Velocity humanize", 0, 100, 1, 0, " %" };
     NumberControl timingHumanize { "arp.timingHumanize", "Timing humanize", 0, 100, 1, 0, " %" };
-    ChoiceControl octaveOrder { "arp.octaveMode", "Order", { "By phrase", "By note" } };
-    NumberControl steps { "arp.steps", "Range", 0, 8, 1, 0, "" };
+    ButtonPairControl octaveOrder { "arp.octaveMode", "Octave order", { "Note", "Phrase" }, 200 };
+    NumberControl steps { "arp.steps", "Added Octaves", 0, 8, 1, 0, "" };
     NumberControl offset { "arp.offset", "Start step", 0, 2285, 1, 0, "" };
     NumberControl repeats { "arp.repeats", "Repeats", 1, 9, 1, 9, "" };
-    ChoiceControl retrigger { "arp.retrigger", "Retrigger", { "Off", "Note", "Beat" } };
-    NumberControl interval { "arp.interval", "Restart every", 0.0625, 64, 0.0625, 4, " beats" };
+    RetriggerControl retrigger;
+    NumberControl interval { "arp.interval", "Retrigger every", 0.0625, 64, 0.0625, 4, " beats" };
     NumberControl target { "arp.target", "Target", 0, 127, 1, 64, "" };
     NumberControl decay { "arp.decay", "Decay", 1, 60000, 1, 1000, " ms" };
     NumberControl strength { "arp.strength", "Strength", 0, 100, 1, 0, " %" };
-    juce::TextButton hold { "Latch" };
-    std::array<juce::GroupComponent, 5> groups;
+    struct LatchButton final : juce::TextButton
+    {
+        LatchButton() : juce::TextButton ("LATCH") {}
+        void paintButton (juce::Graphics&, bool, bool) override;
+        melatonin::DropShadow glow { accentYellow.withAlpha (0.45f), 4 };
+    } hold;
+    std::array<juce::GroupComponent, 3> groups;
     std::vector<NumberControl*> numbers;
     juce::Component::SafePointer<juce::DialogWindow> glossaryWindow;
     int startStepCount = 4;
     int lastRevision = -1;
-    bool syncing = false, fitNotes = true, projectModified = false;
+    bool syncing = false, projectModified = false;
     juce::var bankState;
     void showProjectMenu();
     int copySource = -1, copyRevision = -1;

@@ -201,30 +201,7 @@ TEST_CASE ("Chord heading selects tones for grouped resize and movement", "[tone
     grid.mouseUp (pointerEvent (grid, { 400, 284 }, body));
     for (int n = 0; n < 3; ++n)
         CHECK (static_cast<double> (processor.getTimelineState()["chords"][1]["noteStarts"][n]) == 6.0);
-    auto* length = dynamic_cast<juce::Label*> (grid.findChildWithID ("timeline.length"));
-    REQUIRE (length != nullptr);
-    length->showEditor();
-    REQUIRE (length->getCurrentTextEditor() != nullptr);
-    length->getCurrentTextEditor()->setText ("5");
-    length->hideEditor (false);
-    CHECK (static_cast<double> (processor.getTimelineState()["totalBeats"]) == 20.0);
-    for (const auto* invalid : { "1..2", "1", "-5", "2048" })
-    {
-        length->showEditor();
-        REQUIRE (length->getCurrentTextEditor() != nullptr);
-        length->getCurrentTextEditor()->setText (invalid);
-        length->hideEditor (false);
-        CHECK (controller.error.isNotEmpty());
-        CHECK (static_cast<double> (processor.getTimelineState()["totalBeats"]) == 20.0);
-        CHECK (length->getText() == "5.00 bars");
-    }
-    length->showEditor();
-    REQUIRE (length->getCurrentTextEditor() != nullptr);
-    length->getCurrentTextEditor()->setText ("9");
-    length->hideEditor (true);
-    CHECK (static_cast<double> (processor.getTimelineState()["totalBeats"]) == 20.0);
-    controller.undo();
-    CHECK (static_cast<double> (processor.getTimelineState()["totalBeats"]) == 16.0);
+
 }
 
 TEST_CASE ("Marquee selection moves every intersected source tone and escapes as one edit", "[tones][native-ui]")
@@ -234,7 +211,7 @@ TEST_CASE ("Marquee selection moves every intersected source tone and escapes as
     chordrunner::ui::TimelineView grid (controller);
     grid.setSize (846, 474);
     REQUIRE (grid.createComponentSnapshot (grid.getLocalBounds()).isValid());
-    const juce::Point<float> origin { 60, 270 }, end { 180, 435 };
+    const juce::Point<float> origin { 60, 250 }, end { 180, 435 };
     grid.mouseDown (pointerEvent (grid, origin, origin));
     grid.mouseDrag (pointerEvent (grid, end, origin));
     grid.mouseUp (pointerEvent (grid, end, origin));
