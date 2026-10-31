@@ -57,7 +57,9 @@ TEST_CASE ("Loop bracket draws and saves its range and bypass independently per 
     CHECK (static_cast<double> (processor.getTimelineState()["loopStart"]) == Catch::Approx (4));
     CHECK (static_cast<double> (processor.getTimelineState()["loopEnd"]) == Catch::Approx (8));
     CHECK (static_cast<bool> (processor.getTimelineState()["loopEnabled"]));
-    toggle (editor, "sequence.loop.enabled", false);
+    bracket.mouseDown (event (origin)); bracket.mouseUp (event (origin));
+    CHECK_FALSE (static_cast<bool> (processor.getTimelineState()["loopEnabled"]));
+    CHECK (findControl (editor, "sequence.loop.enabled") == nullptr);
     processor.selectPattern (1);
     CHECK_FALSE (static_cast<bool> (processor.getTimelineState()["loopEnabled"]));
     juce::MemoryBlock saved; processor.getStateInformation (saved);
@@ -261,7 +263,9 @@ TEST_CASE ("Envelope graph edits start end and duration ratio without dials", "[
     CHECK (static_cast<int> (processor.getTimelineState()["arp"]["startVelocity"]) == 127);
     drag (1, { static_cast<float> (graph.getWidth() - 20), static_cast<float> (graph.getHeight() - 60) });
     CHECK (static_cast<int> (processor.getTimelineState()["arp"]["target"]) == 0);
-    drag (2, { static_cast<float> (graph.getWidth()) * 0.5f, graph.handlePosition (2).y });
+    drag (1, { graph.handlePosition (1).x - static_cast<float> (graph.getWidth() - 40) * 0.5f,
+                  38.0f + static_cast<float> (graph.getHeight() - 98) * 0.5f });
+    CHECK (static_cast<int> (processor.getTimelineState()["arp"]["target"]) == 64);
     CHECK (static_cast<double> (processor.getTimelineState()["arp"]["durationRatio"]) == Catch::Approx (0.5));
     CHECK (findControl (editor, "arp.target") == nullptr);
     CHECK (findControl (editor, "arp.decay") == nullptr);
@@ -355,6 +359,31 @@ TEST_CASE ("Native controls retain every numeric engine mapping", "[native-ui]")
     {
         choose (editor, "arp.rate", static_cast<int> (i) + 1);
         CHECK (static_cast<double> (processor.getTimelineState()["arp"]["rate"]) == Catch::Approx (divisions[i]));
+    }
+}
+
+TEST_CASE ("Humanize values drag vertically without knobs or horizontal jumps", "[native-ui][humanize-input]")
+{
+    PluginProcessor processor;
+    NativeEditor editor (processor);
+    editor.setSize (1400, 1000);
+    toggle (editor, "arp.enabled", true);
+    for (const auto* id : { "arp.timingHumanize", "arp.velocityHumanize" })
+    {
+        auto& slider = control<juce::Slider> (editor, id);
+        CHECK (slider.getSliderStyle() == juce::Slider::LinearBarVertical);
+        slider.setValue (50, juce::sendNotificationSync);
+        const juce::Point<float> origin { 20, 10 };
+        const auto event = [&] (juce::Point<float> at) { return juce::MouseEvent {
+            juce::Desktop::getInstance().getMainMouseSource(), at, juce::ModifierKeys (juce::ModifierKeys::leftButtonModifier),
+            1, 0, 0, 0, 0, &slider, &slider, juce::Time(), origin, juce::Time(), 1, true }; };
+        slider.mouseDown (event (origin));
+        slider.mouseDrag (event (origin.translated (20, 0)));
+        CHECK (slider.getValue() == Catch::Approx (50));
+        slider.mouseDrag (event (origin.translated (0, -20)));
+        CHECK (slider.getValue() == Catch::Approx (55));
+        slider.mouseUp (event (origin.translated (0, -20)));
+        CHECK (static_cast<int> (processor.getTimelineState()["arp"][juce::Identifier (juce::String (id).substring (4))]) == 55);
     }
 }
 
@@ -1654,4 +1683,31 @@ TEST_CASE ("UI scale persists without dirtying music or entering musical undo", 
     CHECK (processor.getUiScalePercent() == 400);
     processor.setUiScalePercent (-100);
     CHECK (processor.getUiScalePercent() == 50);
+}
+
+TEST_CASE ("Note splash telemetry follows emitted chord and arp note-ons", "[native-ui][note-splash]")
+{
+    for (const bool arp : { false, true })
+    {
+        PluginProcessor processor;
+        NativeEditor editor (processor);
+        toggle (editor, "arp.enabled", arp);
+        processor.setRateAndBufferSizeDetails (48000, 512);
+        processor.prepareToPlay (48000, 512);
+        CHECK (processor.lastNoteAttackTime (60) == Catch::Approx (0));
+        processor.setPlaying (true);
+        juce::AudioBuffer<float> audio (2, 512);
+        juce::MidiBuffer midi;
+        processor.processBlock (audio, midi);
+        int attacks = 0;
+        for (const auto event : midi)
+        {
+            const auto message = event.getMessage();
+            if (! message.isNoteOn()) continue;
+            ++attacks;
+            CHECK (processor.lastNoteAttackTime (message.getNoteNumber()) > 0);
+        }
+        CHECK (attacks > 0);
+        CHECK (processor.lastNoteAttackTime (127) == Catch::Approx (0));
+    }
 }

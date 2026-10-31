@@ -22,6 +22,7 @@ private:
     int mode = 0, pattern = -1, revision = -1;
     double oldStart = 0, oldEnd = 0, anchor = 0;
     float originX = 0;
+    bool dragged = false, toggleOnClick = false;
     double beatAt (float) const;
     float xAt (double) const;
     void finish();

@@ -5,7 +5,7 @@ namespace chordrunner::ui
 SequenceLoopBar::SequenceLoopBar (EditorController& owner) : controller (owner)
 {
     setComponentID ("sequence.loop.range");
-    setTooltip ("Drag to draw a loop. Drag either end to resize; Shift-drag the bracket to move it. Snaps to sixteenth notes. LOOP toggles playback without losing the range.");
+    setTooltip ("Drag to draw a loop. Drag either end to resize; Shift-drag the bracket to move it. Snaps to sixteenth notes. Click the bracket to toggle looping without losing the range.");
 }
 float SequenceLoopBar::xAt (double beat) const
 {
@@ -44,9 +44,7 @@ void SequenceLoopBar::paint (juce::Graphics& g)
     handles.addTriangle (left, 3, left + 8, 3, left, 11);
     handles.addTriangle (right, 3, right - 8, 3, right, 11);
     g.fillPath (handles);
-    g.setFont (uiFont (10.0f));
-    g.drawText (juce::String (start / 4 + 1, 2) + " - " + juce::String (end / 4 + 1, 2),
-        static_cast<int> (left) + 12, 3, juce::jmax (0, static_cast<int> (right - left) - 24), getHeight() - 3, juce::Justification::centredLeft);
+
 }
 void SequenceLoopBar::mouseDown (const juce::MouseEvent& event)
 {
@@ -56,6 +54,8 @@ void SequenceLoopBar::mouseDown (const juce::MouseEvent& event)
     oldEnd = static_cast<double> (controller.state["loopEnd"]);
     if (oldEnd <= 0) oldEnd = static_cast<double> (controller.state["totalBeats"]);
     originX = event.position.x; anchor = beatAt (originX);
+    dragged = false;
+    toggleOnClick = originX >= xAt (oldStart) - 8 && originX <= xAt (oldEnd) + 8;
     mode = std::abs (originX - xAt (oldStart)) <= 8 ? 1 : std::abs (originX - xAt (oldEnd)) <= 8 ? 2 : event.mods.isShiftDown() ? 3 : 4;
     pattern = controller.processor.selectedPattern(); revision = static_cast<int> (controller.state["revision"]);
     controller.processor.beginEditGesture();
@@ -64,6 +64,7 @@ void SequenceLoopBar::mouseDrag (const juce::MouseEvent& event)
 {
     if (mode == 0 || std::abs (event.position.x - originX) < 3) return;
     if (pattern != controller.processor.selectedPattern() || revision != static_cast<int> (controller.processor.getTransportState()["revision"])) { finish(); return; }
+    dragged = true;
     const double total = static_cast<double> (controller.state["totalBeats"]), at = beatAt (event.position.x);
     double start = oldStart, end = oldEnd;
     if (mode == 1) start = juce::jlimit (0.0, end - 0.25, at);
@@ -85,7 +86,14 @@ void SequenceLoopBar::mouseDrag (const juce::MouseEvent& event)
     controller.error = controller.processor.editTimeline (next, "sequence.loop").getErrorMessage();
     controller.refresh(); revision = static_cast<int> (controller.state["revision"]);
 }
-void SequenceLoopBar::mouseUp (const juce::MouseEvent&) { finish(); }
+void SequenceLoopBar::mouseUp (const juce::MouseEvent& event)
+{
+    if (mode != 0 && toggleOnClick && ! dragged && std::abs (event.position.x - originX) < 3
+        && isEnabled() && pattern == controller.processor.selectedPattern()
+        && revision == static_cast<int> (controller.processor.getTransportState()["revision"]))
+        controller.set ("loopEnabled", ! static_cast<bool> (controller.state["loopEnabled"]));
+    finish();
+}
 void SequenceLoopBar::mouseMove (const juce::MouseEvent& event)
 {
     double end = static_cast<double> (controller.state["loopEnd"]);

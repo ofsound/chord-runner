@@ -11,6 +11,6 @@ public:
     void paint (juce::Graphics&, juce::Rectangle<int> clip) const;
 private:
     int cachedWidth = 0, cachedHeight = 0;
-    juce::Path grid, majorGrid, webs, wisps, construction;
+    juce::Path grid, majorGrid, rearMesh, frontMesh, accents;
 };
 }

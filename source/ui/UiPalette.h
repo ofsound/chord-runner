@@ -18,9 +18,14 @@ inline juce::Font fitUiFont (juce::Font font, const juce::String& text, float wi
         juce::jmax (1.0f, height) / juce::jmax (1.0f, font.getHeight()));
     return font.withHeight (font.getHeight() * scale);
 }
+inline const juce::Colour arpLabelColour { 0xffe8e5dc };
+inline juce::Font arpLabelFont (float height = 28.0f)
+{
+    return juce::Font (uiFont (height).withStyle ("Medium"));
+}
 // Shared desktop/iPad hierarchy inside the fitted module bodies.
-inline constexpr float controlLabelSize = 30.0f;
-inline constexpr int controlLabelHeight = 40;
+inline constexpr float controlLabelSize = 28.0f;
+inline constexpr int controlLabelHeight = 48;
 inline constexpr float controlValueSize = 28.0f;
 inline constexpr int controlValueHeight = 46;
 inline constexpr float sectionHeadingSize = 28.0f;

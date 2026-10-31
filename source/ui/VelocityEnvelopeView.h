@@ -26,7 +26,8 @@ private:
     ArpeggiatorSettings settings;
     int start = 100, output = 0, activeHandle = -1, dragSource = -1;
     bool liveInput = false;
-    double ageMs = 0, runMs = 1000;
+    double ageMs = 0, runMs = 1000, dragRatio = 0;
+    float dragOriginX = 0;
     juce::Rectangle<float> plotBounds() const;
     double ratio() const;
     int endVelocity() const;

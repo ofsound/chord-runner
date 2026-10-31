@@ -278,6 +278,13 @@ namespace chordrunner::ui
             for (size_t i = 1; i < notes.size(); ++i)
                 if (std::abs (notes[i].start - at) < std::abs (notes[closest].start - at)) closest = i;
             const auto r = noteBounds (notes[closest]);
+            juce::Path attack;
+            for (const auto& note : notes)
+                if (&note == &notes[closest] || (settings.style == ArpeggiatorSettings::chordTrigger && std::abs (note.start - notes[closest].start) < 0.001))
+                    attack.addRoundedRectangle (noteBounds (note), 3);
+            attackGlow.setColor (accentYellow.withAlpha (0.6f * pulse * pulse), 0);
+            attackGlow.setColor (accentYellow.withAlpha (0.8f * pulse * pulse), 1);
+            attackGlow.render (g, attack);
             g.setColour (velocityColour (notes[closest].velocity).withAlpha (pulse * 0.2f)); g.fillRoundedRectangle (r.expanded (5), 5);
             g.setColour (velocityColour (notes[closest].velocity).withMultipliedBrightness (1.12f).withAlpha (pulse)); g.fillRoundedRectangle (r, 3);
             if (settings.style == ArpeggiatorSettings::chordTrigger)

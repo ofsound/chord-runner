@@ -39,6 +39,7 @@ private:
     EditorController& controller;
     int selected = 0, previewRevision = -1;
     std::vector<chordrunner::PreviewNote> outputPreview;
+    melatonin::DropShadow attackGlow { { accentYellow.withAlpha (0.6f), 12 }, { accentYellow.withAlpha (0.8f), 4 } };
     int gridLow = 48, gridHigh = 84, dragLow = 48, dragHigh = 84;
     int hoverChord = -1, hoverPitch = -1;
     int dragSource = -1;
@@ -308,7 +309,6 @@ private:
     } glossary;
     ModulePower sequencer { "SEQ power" }, arpeggiator { "ARP power" };
     SequenceLoopBar loopBar { controller };
-    juce::TextButton loopToggle { "LOOP" };
     ChordInput progression;
     ChordCompletion completion { progression };
     IconButton apply { "Apply" };
@@ -334,12 +334,12 @@ private:
     RotateControl offset;
     NumberControl repeats { "arp.repeats", "Repeats", 1, 8.1, 0.1, 8.1, "" };
     RetriggerControl retrigger;
-    NumberControl interval { "arp.interval", "Retrigger every", 0.0625, 64, 0.0625, 4, " beats" };
+    NumberControl interval { "arp.interval", "Every", 0.0625, 64, 0.0625, 4, " beats" };
     ModulePower envelopePower { "Velocity envelope power" };
     VelocityEnvelopeView envelopeDisplay;
     struct LatchButton final : juce::TextButton
     {
-        LatchButton() : juce::TextButton ("LATCH") {}
+        LatchButton() : juce::TextButton ("Latch") {}
         void paintButton (juce::Graphics&, bool, bool) override;
         melatonin::DropShadow glow { accentYellow.withAlpha (0.45f), 4 };
     } hold;

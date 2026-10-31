@@ -23,7 +23,7 @@ namespace chordrunner::ui
         }
 
     private:
-        static constexpr float inlineHeadingSize = 36.0f;
+        static constexpr float inlineHeadingSize = 28.0f;
         bool inlineLane = false;
         // Retain access to all steps in older 16-step projects.
         int visibleSteps() const { return length > 8 ? 16 : 8; }

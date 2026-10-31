@@ -78,6 +78,7 @@ public:
    #endif
     void setProjectFile (const juce::File& file) { const juce::ScopedLock lock (stateLock); projectFile = file; }
     double lastMidiInputTime() const { return midiInputTime.load (std::memory_order_relaxed); }
+    double lastNoteAttackTime (int note) const { return noteAttackTimes[static_cast<size_t> (juce::jlimit (0, 127, note))].load (std::memory_order_relaxed); }
     double lastMidiOutputTime() const { return midiOutputTime.load (std::memory_order_relaxed); }
     bool isStandalone() const { return wrapperType == wrapperType_Standalone; }
     bool isHosted() const { return wrapperType != wrapperType_Undefined && ! isStandalone(); }
@@ -128,6 +129,7 @@ private:
     std::array<bool, 16 * 128> inputKeysDown {}; // Audio-thread owned, no UI access.
     int inputKeyCount = 0;
     std::atomic<double> midiInputTime { -1000.0 }, midiOutputTime { -1000.0 };
+    std::array<std::atomic<double>, 128> noteAttackTimes {};
     std::atomic<int> heldInputStatus { 0 };
     std::atomic<int> arpInputCount { 0 };
     std::atomic<juce::uint64> arpPulseSerial { 0 }, arpPulseStep { 0 }, arpPulseRhythmStep { 0 };

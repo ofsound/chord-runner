@@ -418,6 +418,10 @@ void PluginProcessor::passMidi (const juce::MidiBuffer& input, juce::MidiBuffer&
 
 void PluginProcessor::finishMidiBlock (juce::MidiBuffer& midi)
 {
+    const double now = juce::Time::getMillisecondCounterHiRes();
+    for (const auto event : outgoingMidi)
+        if (event.numBytes == 3 && (event.data[0] & 0xf0) == 0x90 && event.data[2] > 0 && event.data[1] < 128)
+            noteAttackTimes[event.data[1]].store (now + event.samplePosition * 1000.0 / juce::jmax (1.0, getSampleRate()), std::memory_order_relaxed);
     // Rewrite channel-voice statuses in place, retaining timestamps and buffer storage.
     // System messages (including SysEx and realtime clock) have no channel.
     auto* bytes = outgoingMidi.data.begin();

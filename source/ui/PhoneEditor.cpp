@@ -39,15 +39,14 @@ void NativeEditor::layoutPhone()
     if (! phoneLayout) return;
     scaleControl.setVisible (false);
     loopBar.setVisible (false);
-    loopToggle.setVisible (false);
     envelopeDisplay.setVisible (false);
     rate.setRotary (false);
     for (auto* mode : { &rateMode, &octaveOrder, &swingSubdivision }) mode->setHeaderMode (false);
     for (auto* label : { &rate.label, &freeRate.label, &steps.label, &swing.label }) label->setVisible (true);
-    timingHumanize.label.setText ("TIMING HUMANIZE", juce::dontSendNotification);
-    velocityHumanize.label.setText ("VELOCITY HUMANIZE", juce::dontSendNotification);
+    timingHumanize.label.setText ("Timing humanize", juce::dontSendNotification);
+    velocityHumanize.label.setText ("Velocity humanize", juce::dontSendNotification);
     humanizeGroup.setVisible (false);
-    for (auto* control : { &repeats, &steps, &freeRate, &gate, &swing, &timingHumanize, &velocityHumanize })
+    for (auto* control : { &repeats, &steps, &freeRate, &gate, &swing })
         control->slider.setSliderStyle (juce::Slider::LinearHorizontal);
     arpVisualizer.setVisible (false);
     phonePreview.setVisible (false);
@@ -181,8 +180,6 @@ void NativeEditor::layoutPhone()
         voicingSelector.setVisible (true);
         octave.setVisible (true); velocity.setVisible (true);
         loopBar.setVisible (true);
-        loopToggle.setVisible (true);
-        loopToggle.setBounds (48, 5, 62, 24);
         const int entryHeight = 40;
         progression.setBounds (12, 42, cw - 74, entryHeight);
         apply.setBounds (cw - 52, 42, 40, entryHeight);

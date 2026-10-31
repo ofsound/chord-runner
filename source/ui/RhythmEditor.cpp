@@ -83,7 +83,7 @@ namespace chordrunner::ui
         setComponentID (ties ? "rhythm.tie" : "rhythm.gate");
         power.setComponentID (getComponentID() + ".enabled");
         power.setButtonText (ties ? "Tie sequencer power" : "Gate sequencer power");
-        power.setHeading (ties ? "TIE SEQUENCER" : "GATE SEQUENCER");
+        power.setHeading (ties ? "Tie Sequencer" : "Gate Sequencer");
         power.setTooltip (power.getButtonText());
         power.setClickingTogglesState (true);
         power.setFaceDiameter (18.0f);
@@ -282,9 +282,9 @@ namespace chordrunner::ui
     {
         const int count = columns();
         const int rows = visibleSteps() / count;
-        const auto heading = tieLane ? "TIE SEQUENCER" : "GATE SEQUENCER";
+        const auto heading = tieLane ? "Tie Sequencer" : "Gate Sequencer";
         const int labelWidth = static_cast<int> (std::ceil (juce::GlyphArrangement::getStringWidth (
-            juce::Font (uiFont (inlineLane ? inlineHeadingSize : sectionHeadingSize, juce::Font::bold)), heading))) + (inlineLane ? 76 : 58);
+            arpLabelFont (inlineLane ? inlineHeadingSize : sectionHeadingSize), heading))) + (inlineLane ? 76 : 58);
         cellLeft = inlineLane ? labelWidth + 16 : 10;
         cellTop = inlineLane ? 10 : 46;
         cellStride = juce::jmax (1, (getWidth() - cellLeft - 10) / count);

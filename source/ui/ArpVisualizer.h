@@ -40,6 +40,7 @@ namespace chordrunner::ui
             melatonin::DropShadow { accentYellow.withAlpha (0.13f), 7 },
             melatonin::DropShadow { accentYellow.withAlpha (0.24f), 8 }
         };
+        melatonin::DropShadow attackGlow { { accentYellow.withAlpha (0.6f), 12 }, { accentYellow.withAlpha (0.8f), 4 } };
         juce::Label inspection;
         std::vector<PreviewNote> notes;
         std::vector<bool> reachesWindowEdge;
