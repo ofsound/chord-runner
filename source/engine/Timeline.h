@@ -25,6 +25,8 @@ struct Timeline
     int count = 4, channel = 1, velocity = 100, octave = 4, voiceLeading = 0;
     double tempo = 120.0, loopBeats = 0.0;
     bool hostSync = false, sequencerEnabled = true;
+    bool loopEnabled = false;
+    double loopStart = 0.0, loopEnd = 0.0;
     ArpeggiatorSettings arp;
     juce::uint64 noteRevision = 0;
 
@@ -44,6 +46,9 @@ struct Timeline
             result += chords[static_cast<size_t> (i)].beats;
         return result;
     }
+    double playbackStart() const { return loopEnabled ? loopStart : 0.0; }
+    double playbackEnd() const { return loopEnabled && loopEnd > loopStart ? loopEnd : length(); }
+    double playbackLength() const { return playbackEnd() - playbackStart(); }
     double length() const { return juce::jmax (progressionLength(), loopBeats); }
 };
 

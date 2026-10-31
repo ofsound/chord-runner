@@ -9,7 +9,7 @@ std::vector<PreviewNote> renderOutputPreview (const Timeline& timeline, double m
         return notes;
     constexpr double sampleRate = 4000.0;
     const double beatsPerSample = timeline.tempo / (60.0 * sampleRate);
-    const double endBeat = juce::jmin (timeline.length(), maximumBeats);
+    const double endBeat = juce::jmin (timeline.playbackLength(), maximumBeats);
     const int total = static_cast<int> (std::ceil (endBeat / beatsPerSample));
     TimelineEngine sequence;
     Arpeggiator arp;
@@ -39,6 +39,7 @@ std::vector<PreviewNote> renderOutputPreview (const Timeline& timeline, double m
             }
         }
     }
+    for (auto& note : notes) { note.start += timeline.playbackStart(); note.end += timeline.playbackStart(); }
     std::erase_if (notes, [] (const PreviewNote& note) { return note.end <= note.start; });
     return notes;
 }

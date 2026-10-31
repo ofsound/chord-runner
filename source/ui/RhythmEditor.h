@@ -17,13 +17,13 @@ namespace chordrunner::ui
         void setInline (bool value)
         {
             inlineLane = value;
-            power.setFaceDiameter (value ? 26.0f : 18.0f);
+            power.setFaceDiameter (value ? 38.0f : 18.0f);
             power.setHeadingSize (value ? inlineHeadingSize : sectionHeadingSize);
             resized();
         }
 
     private:
-        static constexpr float inlineHeadingSize = 30.0f;
+        static constexpr float inlineHeadingSize = 36.0f;
         bool inlineLane = false;
         // Retain access to all steps in older 16-step projects.
         int visibleSteps() const { return length > 8 ? 16 : 8; }
@@ -70,9 +70,10 @@ namespace chordrunner::ui
             bool keyPressed (const juce::KeyPress&) override;
             CycleLane& owner;
             bool dragging = false;
+            melatonin::DropShadow gripGlow { accentYellow.withAlpha (0.4f), 4 };
         } handle { *this };
-        melatonin::DropShadow cellGlow { { accentYellow.withAlpha (0.35f), 6 },
-            { accentYellow.withAlpha (0.3f), 2 } };
+        melatonin::DropShadow cellGlow { { accentYellow.withAlpha (0.28f), 12 },
+            { accentYellow.withAlpha (0.22f), 4 } };
         int cellStride = 1, cellLeft = 10, cellTop = 27, rowStride = 30;
         int dragFrom = -1, dragTo = -1, dragRevision = -1, dragPattern = -1;
         bool bitDragging = false, gestureChanged = false;

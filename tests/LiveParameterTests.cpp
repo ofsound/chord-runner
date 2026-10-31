@@ -226,3 +226,44 @@ TEST_CASE ("Editing an endless tie releases its old tail at the next step", "[ar
     CHECK (offs == 1);
     CHECK (ons == 1);
 }
+
+TEST_CASE ("Arp Mode automation is discrete, realtime-safe, saved per pattern and heard without UI", "[processor][mode-pad]")
+{
+    PluginProcessor processor;
+    auto* parameter = processor.getParameters()[0];
+    CHECK (parameter->getName (64) == "Arp Mode");
+    CHECK (parameter->getNumSteps() == 9);
+    CHECK (parameter->isDiscrete());
+    parameter->setValue (1.0f);
+    CHECK (static_cast<int> (processor.getTimelineState()["arp"]["style"]) == 9);
+    processor.selectPattern (1);
+    CHECK (static_cast<int> (processor.getTimelineState()["arp"]["style"]) == 0);
+    parameter->setValue (0.125f);
+    juce::MemoryBlock state;
+    processor.getStateInformation (state);
+    PluginProcessor restored;
+    restored.setStateInformation (state.getData(), static_cast<int> (state.getSize()));
+    CHECK (static_cast<int> (restored.getTimelineState()["arp"]["style"]) == 1);
+    restored.selectPattern (0);
+    CHECK (static_cast<int> (restored.getTimelineState()["arp"]["style"]) == 9);
+    auto timeline = processor.getTimelineState();
+    timeline.getDynamicObject()->setProperty ("sequencerEnabled", false);
+    timeline["arp"].getDynamicObject()->setProperty ("enabled", true);
+    REQUIRE (processor.setTimelineState (timeline).wasOk());
+    processor.setLaunchMode (0);
+    processor.setRateAndBufferSizeDetails (48000, 16384);
+    processor.prepareToPlay (48000, 16384);
+    processor.setPlaying (true);
+    juce::AudioBuffer<float> audio (2, 512);
+    juce::MidiBuffer midi;
+    for (int note : { 60, 64, 67 }) midi.addEvent (juce::MidiMessage::noteOn (1, note, static_cast<juce::uint8> (100)), 0);
+    parameter->setValue (0.0f);
+    processor.processBlock (audio, midi);
+    parameter->setValue (0.125f);
+    audio.setSize (2, 16384);
+    midi.clear();
+    processor.processBlock (audio, midi);
+    std::vector<int> notes;
+    for (const auto event : midi) if (event.getMessage().isNoteOn()) notes.push_back (event.getMessage().getNoteNumber());
+    CHECK (notes == std::vector<int> { 64, 60 });
+}

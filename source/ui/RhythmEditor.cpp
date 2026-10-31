@@ -18,11 +18,13 @@ namespace chordrunner::ui
             fill = accent.brighter (0.25f);
         if (isEnabled() && (hover || down))
             fill = fill.brighter (0.12f);
-        g.setColour (fill.withMultipliedAlpha (isEnabled() ? 1.0f : 0.4f));
-        g.fillRoundedRectangle (r, 3);
+        const float alpha = isEnabled() ? 1.0f : 0.4f;
+        g.setGradientFill (juce::ColourGradient (fill.brighter (on ? 0.18f : 0.04f).withMultipliedAlpha (alpha),
+            r.getTopLeft(), fill.darker (on ? 0.12f : 0.06f).withMultipliedAlpha (alpha), r.getBottomLeft(), false));
+        g.fillRoundedRectangle (r, 5);
         g.setColour ((on ? accent.brighter (0.2f) : juce::Colour (0xff41525b)).withAlpha (inCycle ? 0.5f : 0.2f));
-        g.drawRoundedRectangle (r, 3, 0.8f);
-        auto font = juce::Font (uiFont (owner->inlineLane ? 30.0f : 18.0f, juce::Font::bold));
+        g.drawRoundedRectangle (r, 5, 0.6f);
+        auto font = juce::Font (uiFont (owner->inlineLane ? 20.0f : 18.0f, juce::Font::bold));
         const float available = static_cast<float> (juce::jmax (1, getWidth() - 4));
         const float width = juce::GlyphArrangement::getStringWidth (font, getButtonText());
         if (width > available)
@@ -262,7 +264,7 @@ namespace chordrunner::ui
             const auto range = cells[static_cast<size_t> (first)].getBounds().getUnion (cells[static_cast<size_t> (last)].getBounds()).toFloat().expanded (3);
             g.setColour (accent.withAlpha (0.08f * alpha));
             g.fillRoundedRectangle (range, 6);
-            g.setColour (accent.withAlpha (0.42f * alpha));
+            g.setColour (accent.withAlpha (0.16f * alpha));
             g.drawRoundedRectangle (range, 6, 1);
         }
         for (int i = 0; i < length; ++i)
@@ -282,7 +284,7 @@ namespace chordrunner::ui
         const int rows = visibleSteps() / count;
         const auto heading = tieLane ? "TIE SEQUENCER" : "GATE SEQUENCER";
         const int labelWidth = static_cast<int> (std::ceil (juce::GlyphArrangement::getStringWidth (
-            juce::Font (uiFont (inlineLane ? inlineHeadingSize : sectionHeadingSize, juce::Font::bold)), heading))) + 58;
+            juce::Font (uiFont (inlineLane ? inlineHeadingSize : sectionHeadingSize, juce::Font::bold)), heading))) + (inlineLane ? 76 : 58);
         cellLeft = inlineLane ? labelWidth + 16 : 10;
         cellTop = inlineLane ? 10 : 46;
         cellStride = juce::jmax (1, (getWidth() - cellLeft - 10) / count);
@@ -294,18 +296,29 @@ namespace chordrunner::ui
         {
             auto& cell = cells[static_cast<size_t> (i)];
             cell.setVisible (i < visibleSteps());
-            cell.setBounds (cellLeft + i % count * cellStride, cellTop + i / count * rowStride, cellStride - 4, rowStride - 3);
+            const int side = juce::jmax (1, juce::jmin (cellStride - 4, rowStride - 3));
+            cell.setBounds (cellLeft + i % count * cellStride, cellTop + i / count * rowStride + (rowStride - 3 - side) / 2, side, side);
         }
         const auto end = cells[static_cast<size_t> (length - 1)].getBounds();
-        handle.setBounds (end.getRight() - 4, end.getY(), 9, end.getHeight());
+        handle.setBounds (end.getRight() - 8, end.getY(), 18, end.getHeight());
         handle.toFront (false);
     }
     void CycleLane::Handle::paint (juce::Graphics& g)
     {
         const auto centre = getLocalBounds().toFloat().getCentre();
-        g.setColour ((dragging || isMouseOver() ? accent : accent.withAlpha (0.65f)).withMultipliedAlpha (isEnabled() ? 1.0f : 0.35f));
-        for (int dot = -2; dot <= 2; ++dot)
-            g.fillEllipse (centre.x - 0.6f, centre.y + static_cast<float> (dot) * 4, 1.2f, 1.2f);
+        const bool active = dragging || isMouseOver() || hasKeyboardFocus (true);
+        const float alpha = isEnabled() ? 1.0f : 0.4f;
+        const float height = juce::jmin (44.0f, static_cast<float> (getHeight()) - 4.0f);
+        const juce::Rectangle<float> grip (centre.x - 6.0f, centre.y - height * 0.5f, 12.0f, height);
+        juce::Path silhouette;
+        silhouette.addRoundedRectangle (grip, 5.0f);
+        if (isEnabled()) gripGlow.render (g, silhouette);
+        g.setColour (juce::Colour (0xff172027).withAlpha (alpha));
+        g.fillPath (silhouette);
+        g.setColour (accent.withAlpha ((active ? 1.0f : 0.75f) * alpha));
+        g.drawRoundedRectangle (grip, 5.0f, active ? 1.5f : 1.0f);
+        for (const float x : { centre.x - 1.8f, centre.x + 1.8f })
+            g.drawLine (x, centre.y - height * 0.23f, x, centre.y + height * 0.23f, 1.2f);
     }
     void CycleLane::Handle::mouseDown (const juce::MouseEvent& event)
     {

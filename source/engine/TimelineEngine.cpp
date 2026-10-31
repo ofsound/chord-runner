@@ -29,7 +29,7 @@ void TimelineEngine::render (const Timeline& timeline, double startBeat, double 
     if (changed || ! wasPlaying || std::abs (startBeat - expectedBeat) > 1.0e-7)
         stop (midi);
     heldChannel = timeline.channel;
-    const double bps = bpm / (60.0 * sampleRate), length = timeline.length();
+    const double bps = bpm / (60.0 * sampleRate), length = timeline.playbackLength();
     struct Event
     {
         int sample, id, pitch;
@@ -60,14 +60,14 @@ void TimelineEngine::render (const Timeline& timeline, double startBeat, double 
             continue;
         }
         const auto cycle = static_cast<juce::int64> (std::floor ((beat + 1.0e-9) / length));
-        const double cycleStart = static_cast<double> (cycle) * length;
+        const double cycleStart = static_cast<double> (cycle) * length - timeline.playbackStart();
         const double phase = juce::jmax (0.0, beat - cycleStart);
         if (cycle != lastCycle)
         {
             stop (midi, cursor);
             lastCycle = cycle;
         }
-        const double remainingSamples = std::ceil ((cycleStart + length - startBeat) / bps - 1.0e-7);
+        const double remainingSamples = std::ceil ((static_cast<double> (cycle + 1) * length - startBeat) / bps - 1.0e-7);
         const int end = remainingSamples >= samples ? samples : juce::jmax (cursor + 1, static_cast<int> (remainingSamples));
         int eventCount = 0;
         double origin = 0.0;

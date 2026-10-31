@@ -83,12 +83,12 @@ void Arpeggiator::schedule (const Key& key, int transpose, const ArpeggiatorSett
     const int baseLength = settings.style == ArpeggiatorSettings::chordTrigger ? 1
         : settings.style == ArpeggiatorSettings::upDown || settings.style == ArpeggiatorSettings::downUp
             ? juce::jmax (1, 2 * keyCount - 2) : keyCount;
-    const auto totalSteps = static_cast<juce::uint64> (baseLength * (settings.steps + 1) * settings.repeats);
+    const auto totalSteps = settings.repeatStepCount (baseLength * (settings.steps + 1));
     int extensions = 0;
-    while (extensions < 256 && (settings.repeats == 0 || step + static_cast<juce::uint64> (extensions + 1) < totalSteps) && gateAt (rhythmStep + static_cast<juce::uint64> (extensions + 1))
+    while (extensions < 256 && (settings.repeats <= 0.0 || step + static_cast<juce::uint64> (extensions + 1) < totalSteps) && gateAt (rhythmStep + static_cast<juce::uint64> (extensions + 1))
         && tieAt (rhythmStep + static_cast<juce::uint64> (extensions + 1)))
         ++extensions;
-    const bool endlessTie = extensions == 256 && settings.repeats == 0;
+    const bool endlessTie = extensions == 256 && settings.repeats <= 0.0;
     if (extensions == 256 && settings.repeats > 0)
         extensions = static_cast<int> (totalSteps - step - 1);
     const auto subdivision = static_cast<juce::uint64> (1u << juce::jlimit (0, 2, settings.swingSubdivision));
@@ -127,14 +127,10 @@ void Arpeggiator::emit (const Key& key, int transpose, const ArpeggiatorSettings
         }
     }
     auto velocity = key.velocity;
-    if (settings.velocityEnabled)
-    {
-        const auto fraction = juce::jlimit (0.0, 1.0, (clock - velocityStart) / (sampleRate * settings.decay / 1000.0));
-        velocity = juce::roundToInt (key.velocity + (settings.target - key.velocity) * fraction * settings.strength / 100.0);
-    }
+    const double envelopeMs = (clock - velocityStart) * 1000.0 / sampleRate;
+    velocity = settings.envelopeVelocity (key.velocity, envelopeMs, settings.envelopeRunMs (keyCount, currentBpm));
     if (settings.velocityHumanize > 0 && velocity > 0)
-        velocity = juce::jlimit (1, 127, juce::roundToInt (velocity + (grooveRandom() * 2.0 - 1.0)
-            * velocity * settings.velocityHumanize / 100.0));
+        velocity = settings.humanizedVelocity (velocity, grooveRandom() * 2.0 - 1.0);
     if (velocity <= 0 || voiceCount >= static_cast<int> (voices.size()))
         return;
     output.addEvent (juce::MidiMessage::noteOn (key.channel, note, static_cast<juce::uint8> (velocity)), sample);
@@ -142,6 +138,8 @@ void Arpeggiator::emit (const Key& key, int transpose, const ArpeggiatorSettings
     emittedStep = ordinal;
     emittedRhythmStep = rhythmOrdinal;
     emittedVelocity = velocity;
+    emittedSourceVelocity = settings.velocityEnabled && settings.startVelocity >= 0 ? settings.startVelocity : key.velocity;
+    emittedEnvelopeMs = envelopeMs;
     emittedClock = clock;
     voices[static_cast<size_t> (voiceCount++)] = { note, key.channel, key.note, clock + juce::jmax (1.0, duration * settings.gate / 100.0) };
 }
@@ -157,6 +155,7 @@ void Arpeggiator::render (const ArpeggiatorSettings& settings, const juce::MidiB
         stop (output);
         return;
     }
+    currentBpm = bpm;
     if (wasRunning && std::abs (beat - expectedBeat) > 1.0e-7)
         stop (output);
     // Parameter edits are live updates, not transport events. Keep the current
@@ -189,7 +188,7 @@ void Arpeggiator::render (const ArpeggiatorSettings& settings, const juce::MidiB
             || (settings.tieSequenceEnabled && (settings.tieMask != previousSettings.tieMask || settings.tieLength != previousSettings.tieLength));
         const bool gateChanged = settings.gateSequenceEnabled != previousSettings.gateSequenceEnabled
             || (settings.gateSequenceEnabled && (settings.gateMask != previousSettings.gateMask || settings.gateLength != previousSettings.gateLength));
-        if (tieChanged || gateChanged || (settings.tieSequenceEnabled && settings.repeats != previousSettings.repeats))
+        if (tieChanged || gateChanged || (settings.tieSequenceEnabled && std::abs (settings.repeats - previousSettings.repeats) >= 1.0e-12))
         {
             // An old tie may have an effectively infinite tail. Let it reach
             // the next step, then let the edited rhythm take over.
@@ -419,7 +418,7 @@ void Arpeggiator::render (const ArpeggiatorSettings& settings, const juce::MidiB
             : (settings.style == ArpeggiatorSettings::upDown || settings.style == ArpeggiatorSettings::downUp)
                 ? juce::jmax (1, 2 * keyCount - 2) : keyCount;
         const int length = baseLength * (settings.steps + 1);
-        if (settings.repeats > 0 && step >= static_cast<juce::uint64> (length * settings.repeats))
+        if (settings.repeats > 0 && step >= settings.repeatStepCount (length))
         {
             flushPending();
             continue;

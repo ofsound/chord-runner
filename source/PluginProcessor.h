@@ -5,6 +5,8 @@
 #include "ui/UiScale.h"
 #include "platform/IOSProjectLibrary.h"
 
+class ArpModeParameter;
+
 class PluginProcessor : public juce::AudioProcessor
 {
 public:
@@ -57,6 +59,8 @@ public:
     juce::Result editChordTone (int chord, int tone, int pitch, int expectedRevision);
     juce::Result editNotes (const std::vector<chordrunner::NoteEdit>&, int expectedRevision);
     juce::Result resizeLoop (double beats, int expectedRevision);
+    void beginArpModeGesture();
+    void endArpModeGesture();
     void beginEditGesture() { const juce::ScopedLock lock (stateLock); lastTransaction.clear(); editGestureActive = true; }
     void endEditGesture() { const juce::ScopedLock lock (stateLock); lastTransaction.clear(); editGestureActive = false; }
     void undo();
@@ -86,6 +90,11 @@ public:
     }
 
 private:
+    friend class ArpModeParameter;
+    std::array<std::atomic<int>, patternCount> liveStyles {};
+    juce::AudioProcessorParameter* arpModeParameter = nullptr;
+    std::atomic<int> notifiedMode { -1 };
+    void notifyArpMode(); // Producers only; never called from processBlock.
     std::atomic<int> uiScalePercent { chordrunner::ui::UiScale::defaultPercent };
    #if JUCE_IOS
     std::shared_ptr<chordrunner::IOSProjectLibrary> iosLibrary;
@@ -122,7 +131,8 @@ private:
     std::atomic<int> heldInputStatus { 0 };
     std::atomic<int> arpInputCount { 0 };
     std::atomic<juce::uint64> arpPulseSerial { 0 }, arpPulseStep { 0 }, arpPulseRhythmStep { 0 };
-    std::atomic<int> arpPulseVelocity { 0 };
+    std::atomic<int> arpPulseVelocity { 0 }, arpSourceVelocity { 100 };
+    std::atomic<double> arpEnvelopeMs { 0 };
     std::atomic<double> arpPulseAge { 1000 }, arpPulseDueMs { 0 };
     void trackInputKeys (const juce::MidiBuffer&, int samples, bool clear);
     std::array<bool, 16> passedSustain {};

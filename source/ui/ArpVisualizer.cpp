@@ -5,11 +5,7 @@ namespace chordrunner::ui
     namespace
     {
         const juce::Colour ink (0xffe9ecee), muted (0xff929da8), mint (accentGreen), gold (accentYellow);
-        juce::Colour velocityColour (int velocity)
-        {
-            const float amount = juce::jlimit (0.0f, 1.0f, static_cast<float> (velocity) / 127.0f);
-            return accentYellow.withMultipliedBrightness (0.06f + 0.94f * std::pow (amount, 1.25f));
-        }
+
     }
     ArpVisualizer::ArpVisualizer()
     {
@@ -124,13 +120,13 @@ namespace chordrunner::ui
         if (getWidth() < 600)
             return (settings.retrigger == 2 ? "Restart: " + timeText (settings.interval) : settings.retrigger == 1 ? juce::String ("Note restart")
                                                                                                        : juce::String ("Restart off"))
-                   + " / " + (settings.repeats == 0 ? juce::String ("Infinite repeats") : "Repeats: " + juce::String (settings.repeats))
+                   + " / " + (settings.repeats <= 0.0 ? juce::String ("Infinite repeats") : "Repeats: " + juce::String (settings.repeats, 1))
                    + (settings.hold ? " / Hold on" : " / Hold off");
         const auto restart = settings.retrigger == 2   ? "Yellow = restart every " + timeText (settings.interval)
                              : settings.retrigger == 1 ? juce::String ("New input notes restart the phrase")
                                                        : juce::String ("Off = no input-note or grid restart");
-        const auto repeats = settings.repeats == 0 ? juce::String ("Repeats forever")
-                                                   : juce::String (settings.repeats) + " cycles then waits";
+        const auto repeats = settings.repeats <= 0.0 ? juce::String ("Repeats forever")
+                                                   : juce::String (settings.repeats, 1) + " cycles then waits";
         const auto envelope = settings.velocityEnabled && getWidth() >= 800
                                   ? " / Phrase restart resets velocity"
                                   : "";
@@ -216,7 +212,7 @@ namespace chordrunner::ui
                 const float dash[] { 3, 4 };
                 g.drawDashedLine ({ xAt (base), plot.getY(), xAt (base), plot.getBottom() }, dash, 2);
             }
-            const double repeatEnd = base + naturalBeats * settings.repeats;
+            const double repeatEnd = base + static_cast<double> (settings.repeatStepCount (stepCount)) * stepBeats;
             if (settings.repeats > 0 && repeatEnd < end)
             {
                 g.setColour (ink.withAlpha (0.025f));

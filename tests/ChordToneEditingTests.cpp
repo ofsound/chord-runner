@@ -187,10 +187,12 @@ TEST_CASE ("Chord heading selects tones for grouped resize and movement", "[tone
         grid.mouseUp (pointerEvent (grid, point, point));
     };
     click ({ 100, 35 }); // Select every tone in C.
-    const juce::Point<float> edge { 243, 424 };
+    const float pixelsPerBeat = (static_cast<float> (grid.getWidth()) - 24.0f) / 16.0f;
+    const juce::Point<float> edge { 24.0f + 4 * pixelsPerBeat - 4, 424 };
+    const auto shortened = edge.translated (-2 * pixelsPerBeat, 0);
     grid.mouseDown (pointerEvent (grid, edge, edge));
-    grid.mouseDrag (pointerEvent (grid, { 143, 424 }, edge));
-    grid.mouseUp (pointerEvent (grid, { 143, 424 }, edge));
+    grid.mouseDrag (pointerEvent (grid, shortened, edge));
+    grid.mouseUp (pointerEvent (grid, shortened, edge));
     for (int n = 0; n < 3; ++n)
         CHECK (static_cast<double> (processor.getTimelineState()["chords"][0]["noteDurations"][n]) == 2.0);
     controller.undo();

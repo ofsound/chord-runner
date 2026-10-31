@@ -60,11 +60,16 @@ option(CHORD_RUNNER_COPY_PLUGINS "Install plugins in user plugin folders after b
 if(CMAKE_SYSTEM_NAME STREQUAL "iOS")
     set(CHORD_RUNNER_COPY_PLUGINS OFF)
 endif()
+# iOS masks the icon itself; desktop artwork contains transparent padding.
+set(CHORD_RUNNER_APP_ICON "${CMAKE_CURRENT_SOURCE_DIR}/packaging/icon.png")
+if(CMAKE_SYSTEM_NAME STREQUAL "iOS")
+    set(CHORD_RUNNER_APP_ICON "${CMAKE_CURRENT_SOURCE_DIR}/packaging/icon-ios.png")
+endif()
 juce_add_plugin(${PROJECT_NAME}
     ${CHORD_RUNNER_MOBILE_OPTIONS}
     COMPANY_NAME "${COMPANY_NAME}"
     BUNDLE_ID "${BUNDLE_ID}"
-    ICON_BIG "${CMAKE_CURRENT_SOURCE_DIR}/packaging/icon.png"
+    ICON_BIG "${CHORD_RUNNER_APP_ICON}"
     COPY_PLUGIN_AFTER_BUILD ${CHORD_RUNNER_COPY_PLUGINS}
     PLUGIN_MANUFACTURER_CODE Osnd
     PLUGIN_CODE Crn1

@@ -6,6 +6,8 @@ namespace
 bool notesChanged (const chordrunner::Timeline& next, const chordrunner::Timeline& previous)
 {
     if (next.count != previous.count || std::abs (next.length() - previous.length()) > 1.0e-9
+        || next.loopEnabled != previous.loopEnabled
+        || (next.loopEnabled && (std::abs (next.loopStart - previous.loopStart) > 1.0e-9 || std::abs (next.loopEnd - previous.loopEnd) > 1.0e-9))
         || next.channel != previous.channel || next.sequencerEnabled != previous.sequencerEnabled)
         return true;
     for (int c = 0; c < next.count; ++c)
@@ -32,12 +34,17 @@ juce::var encodeTimeline (const chordrunner::Timeline& state, const juce::String
     object->setProperty ("voiceLeading", state.voiceLeading);
     object->setProperty ("hostSync", state.hostSync);
     object->setProperty ("sequencerEnabled", state.sequencerEnabled);
+    object->setProperty ("loopEnabled", state.loopEnabled);
+    object->setProperty ("loopStart", state.loopStart);
+    object->setProperty ("loopEnd", state.loopEnd);
     auto arp = std::make_unique<juce::DynamicObject>();
     arp->setProperty ("enabled", state.arp.enabled);
     arp->setProperty ("sync", state.arp.sync);
     arp->setProperty ("hold", state.arp.hold);
     arp->setProperty ("velocityEnabled", state.arp.velocityEnabled);
     arp->setProperty ("strength", state.arp.strength);
+    arp->setProperty ("startVelocity", state.arp.startVelocity);
+    arp->setProperty ("durationRatio", state.arp.durationRatio);
     arp->setProperty ("velocityRetrigger", state.arp.velocityRetrigger);
     arp->setProperty ("style", state.arp.style);
     arp->setProperty ("steps", state.arp.steps);
@@ -171,7 +178,7 @@ juce::Result decodeTimeline (const juce::var& value, chordrunner::Timeline& next
             || ! numberInRange (arp["distance"], -36, 36)
             || ! numberInRange (arp["offset"], 0, 2285)
             || ! numberInRange (arp["retrigger"], 0, 2)
-            || ! numberInRange (arp["repeats"], 0, 64)
+            || ! numberInRange (arp["repeats"], 0, 64, false)
             || ! numberInRange (arp["target"], 0, 127)
             || ! numberInRange (arp["rate"], 0.0625, 16, false)
             || ! numberInRange (arp["freeMs"], 10, 2000, false)
@@ -191,6 +198,18 @@ juce::Result decodeTimeline (const juce::var& value, chordrunner::Timeline& next
             if (! numberInRange (arp["strength"], 0, 100, false)) return juce::Result::fail ("Invalid envelope strength.");
             next.arp.strength = static_cast<double> (arp["strength"]);
         }
+        if (arp.hasProperty ("startVelocity"))
+        {
+            if (! numberInRange (arp["startVelocity"], -1, 127)) return juce::Result::fail ("Invalid starting velocity.");
+            next.arp.startVelocity = static_cast<int> (arp["startVelocity"]);
+        }
+        if (arp.hasProperty ("durationRatio"))
+        {
+            if (! numberInRange (arp["durationRatio"], -1, 1, false)) return juce::Result::fail ("Invalid envelope duration ratio.");
+            const double ratio = static_cast<double> (arp["durationRatio"]);
+            if (ratio < 0.0 && std::abs (ratio + 1.0) > 1.0e-12) return juce::Result::fail ("Invalid envelope duration ratio.");
+            next.arp.durationRatio = ratio;
+        }
         next.arp.velocityRetrigger = true; // Legacy files may contain false; phrase restarts now always reset dynamics.
         next.arp.style = static_cast<int> (arp["style"]);
         next.arp.steps = static_cast<int> (arp["steps"]);
@@ -202,7 +221,7 @@ juce::Result decodeTimeline (const juce::var& value, chordrunner::Timeline& next
         next.arp.distance = 12; // The arp range now expands only in octaves.
         next.arp.offset = static_cast<int> (arp["offset"]);
         next.arp.retrigger = static_cast<int> (arp["retrigger"]);
-        next.arp.repeats = juce::jmin (8, static_cast<int> (arp["repeats"]));
+        next.arp.repeats = juce::jmin (8.0, static_cast<double> (arp["repeats"]));
         next.arp.target = static_cast<int> (arp["target"]);
         next.arp.rate = static_cast<double> (arp["rate"]);
         next.arp.freeMs = static_cast<double> (arp["freeMs"]);
@@ -311,6 +330,19 @@ juce::Result decodeTimeline (const juce::var& value, chordrunner::Timeline& next
             start += chord.beats;
         }
     }
+    if (value.hasProperty ("loopEnabled") && ! value["loopEnabled"].isBool()) return juce::Result::fail ("Invalid loop enable state.");
+    if (value.hasProperty ("loopStart"))
+    {
+        if (! numberInRange (value["loopStart"], 0, next.length() - 0.25, false)) return juce::Result::fail ("Invalid loop start.");
+        next.loopStart = static_cast<double> (value["loopStart"]);
+    }
+    if (value.hasProperty ("loopEnd"))
+    {
+        if (! numberInRange (value["loopEnd"], 0, next.length(), false)) return juce::Result::fail ("Invalid loop end.");
+        next.loopEnd = static_cast<double> (value["loopEnd"]);
+    }
+    if (next.loopEnd > 0.0 && next.loopEnd - next.loopStart < 0.25) return juce::Result::fail ("Loop must span at least a sixteenth note.");
+    next.loopEnabled = value.hasProperty ("loopEnabled") && static_cast<bool> (value["loopEnabled"]);
     return juce::Result::ok();
 }
 }
@@ -330,6 +362,7 @@ juce::var PluginProcessor::getTimelineState() const
     const int selection = selectedStatus.load (std::memory_order_acquire);
     const auto& pattern = patterns[static_cast<size_t> (juce::jlimit (0, patternCount - 1, selection))];
     auto value = encodeTimeline (pattern.timeline, pattern.progression);
+    value["arp"].getDynamicObject()->setProperty ("style", liveStyles[static_cast<size_t> (juce::jmax (0, selection))].load (std::memory_order_acquire));
     value.getDynamicObject()->setProperty ("revision", revision.load());
     value.getDynamicObject()->setProperty ("projectName", projectName);
     value.getDynamicObject()->setProperty ("patternName", pattern.name);
@@ -359,9 +392,11 @@ juce::Result PluginProcessor::setTimelineState (const juce::var& value)
             item.timeline.hostSync = next.hostSync;
         }
         pattern.timeline = next;
+        liveStyles[static_cast<size_t> (juce::jmax (0, target))].store (next.arp.style, std::memory_order_release);
         pattern.progression = text;
         publishBank();
     }
+    notifyArpMode();
     updateHostDisplay (ChangeDetails().withNonParameterStateChanged (true));
     return juce::Result::ok();
 }
@@ -381,9 +416,11 @@ juce::var PluginProcessor::getProjectState() const
     document->setProperty ("createdAt", createdAt);
     document->setProperty ("modifiedAt", modifiedAt);
     juce::Array<juce::var> slots;
-    for (const auto& pattern : patterns)
+    for (size_t i = 0; i < patterns.size(); ++i)
     {
+        const auto& pattern = patterns[i];
         auto item = encodeTimeline (pattern.timeline, pattern.progression);
+        item["arp"].getDynamicObject()->setProperty ("style", liveStyles[i].load (std::memory_order_acquire));
         item.getDynamicObject()->removeProperty ("chords");
         item.getDynamicObject()->removeProperty ("totalBeats");
         item.getDynamicObject()->setProperty ("name", pattern.name);
@@ -462,6 +499,8 @@ juce::Result PluginProcessor::setProjectState (const juce::var& value, bool stop
             timeline.noteRevision = previous.noteRevision + (stop || notesChanged (timeline, previous) ? 1u : 0u);
         }
         patterns = std::move (next);
+        for (size_t i = 0; i < patterns.size(); ++i)
+            liveStyles[i].store (patterns[i].timeline.arp.style, std::memory_order_release);
         projectName = name.trim().isEmpty() ? juce::String ("Untitled Project") : name;
         projectAuthor = author;
         projectDescription = description;
@@ -481,6 +520,7 @@ juce::Result PluginProcessor::setProjectState (const juce::var& value, bool stop
         lastTransaction.clear();
         markDocumentClean();
     }
+    notifyArpMode();
     updateHostDisplay (ChangeDetails().withNonParameterStateChanged (true));
     return juce::Result::ok();
 }
@@ -521,6 +561,7 @@ void PluginProcessor::selectPattern (int slot)
     selectionRequest.store (slot, std::memory_order_release);
     lastTransaction.clear();
     revision.fetch_add (1);
+    notifyArpMode();
     updateHostDisplay (ChangeDetails().withNonParameterStateChanged (true));
 }
 
@@ -533,6 +574,7 @@ void PluginProcessor::setLaunchMode (int mode)
     launchMode.store (mode);
     revision.fetch_add (1);
     rememberEdit (before);
+    notifyArpMode();
     updateHostDisplay (ChangeDetails().withNonParameterStateChanged (true));
 }
 
@@ -545,11 +587,14 @@ juce::Result PluginProcessor::copyPattern (int source, int destination)
     {
         const juce::ScopedLock lock (stateLock);
         auto copy = patterns[static_cast<size_t> (source)];
+        copy.timeline.arp.style = liveStyles[static_cast<size_t> (source)].load (std::memory_order_acquire);
+        liveStyles[static_cast<size_t> (destination)].store (copy.timeline.arp.style, std::memory_order_release);
         copy.timeline.noteRevision = patterns[static_cast<size_t> (destination)].timeline.noteRevision + 1;
         patterns[static_cast<size_t> (destination)] = std::move (copy);
         publishBank();
     }
     rememberEdit (before);
+    notifyArpMode();
     updateHostDisplay (ChangeDetails().withNonParameterStateChanged (true));
     return juce::Result::ok();
 }
@@ -569,9 +614,11 @@ void PluginProcessor::clearPattern (int slot)
         blank.timeline.noteRevision = pattern.timeline.noteRevision + 1;
         blank.name = "Pattern " + juce::String (slot + 1);
         pattern = blank;
+        liveStyles[static_cast<size_t> (slot)].store (blank.timeline.arp.style, std::memory_order_release);
         publishBank();
     }
     rememberEdit (before);
+    notifyArpMode();
     updateHostDisplay (ChangeDetails().withNonParameterStateChanged (true));
 }
 
@@ -587,6 +634,7 @@ void PluginProcessor::renamePattern (int slot, const juce::String& name)
         revision.fetch_add (1);
     }
     rememberEdit (before);
+    notifyArpMode();
     updateHostDisplay (ChangeDetails().withNonParameterStateChanged (true));
 }
 
@@ -604,6 +652,7 @@ void PluginProcessor::setProjectMetadata (const juce::String& name, const juce::
         revision.fetch_add (1);
     }
     rememberEdit (before);
+    notifyArpMode();
     updateHostDisplay (ChangeDetails().withNonParameterStateChanged (true));
 }
 
@@ -742,6 +791,7 @@ std::vector<chordrunner::PreviewNote> PluginProcessor::getOutputPreview() const
         const int selection = selectedStatus.load();
         if (selection < 0) return {};
         timeline = patterns[static_cast<size_t> (selection)].timeline;
+        timeline.arp.style = liveStyles[static_cast<size_t> (selection)].load (std::memory_order_acquire);
     }
     return chordrunner::renderOutputPreview (timeline);
 }
@@ -771,6 +821,7 @@ juce::Result PluginProcessor::editChordTone (int chordIndex, int toneIndex, int 
     ++timeline.noteRevision;
     publishBank();
     rememberEdit (before, "chord-tone drag");
+    notifyArpMode();
     updateHostDisplay (ChangeDetails().withNonParameterStateChanged (true));
     return juce::Result::ok();
 }
@@ -779,7 +830,9 @@ chordrunner::ArpeggiatorSettings PluginProcessor::getArpPreviewSettings() const
 {
     const juce::ScopedLock lock (stateLock);
     const int selection = selectedStatus.load();
-    return patterns[static_cast<size_t> (juce::jmax (0, selection))].timeline.arp;
+    auto settings = patterns[static_cast<size_t> (juce::jmax (0, selection))].timeline.arp;
+    settings.style = liveStyles[static_cast<size_t> (juce::jmax (0, selection))].load (std::memory_order_acquire);
+    return settings;
 }
 
 juce::Result PluginProcessor::editNotes (const std::vector<chordrunner::NoteEdit>& edits, int expectedRevision)
@@ -822,6 +875,7 @@ juce::Result PluginProcessor::editNotes (const std::vector<chordrunner::NoteEdit
     patterns[static_cast<size_t> (selection)].timeline = next;
     publishBank();
     rememberEdit (before, "note drag");
+    notifyArpMode();
     updateHostDisplay (ChangeDetails().withNonParameterStateChanged (true));
     return juce::Result::ok();
 }

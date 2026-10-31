@@ -254,6 +254,30 @@ TEST_CASE ("Sustain is consumed and releases arpeggiated tails on pedal up", "[a
         CHECK_FALSE (event.getMessage().isController());
 }
 
+TEST_CASE ("Fractional repeats round to the nearest phrase step and release ties", "[arp]")
+{
+    for (const double repeats : { 3.4, 3.5 })
+        for (const bool ties : { false, true })
+        {
+            Arpeggiator engine;
+            ArpeggiatorSettings settings;
+            settings.repeats = repeats;
+            settings.retrigger = 1;
+            settings.tieSequenceEnabled = ties;
+            settings.tieMask = 15;
+            settings.tieLength = 4;
+            juce::MidiBuffer input, output;
+            addChord (input);
+            engine.render (settings, input, output, 0, 120, 48000, 96000, true, false);
+            const int count = repeats < 3.5 ? 10 : 11;
+            CHECK (noteOns (output).size() == static_cast<size_t> (ties ? 1 : count));
+            const auto events = readEvents (output);
+            REQUIRE_FALSE (events.empty());
+            CHECK_FALSE (events.back().on);
+            CHECK (events.back().sample == count * 6000);
+        }
+}
+
 TEST_CASE ("Finite repeats and beat retrigger leave rests", "[arp]")
 {
     Arpeggiator engine;
@@ -266,6 +290,26 @@ TEST_CASE ("Finite repeats and beat retrigger leave rests", "[arp]")
     engine.render (settings, input, output, 0, 120, 48000, 24001, true, false);
     CHECK (noteOns (output) == std::vector<int> {60,64,67,60});
     CHECK (readEvents (output).back().sample == 24000);
+}
+
+TEST_CASE ("Envelope display model matches linear velocities and bounded humanize", "[arp][envelope]")
+{
+    ArpeggiatorSettings settings;
+    settings.velocityEnabled = true;
+    settings.strength = 100;
+    settings.target = 20;
+    settings.decay = 1000;
+    settings.velocityHumanize = 25;
+    CHECK (settings.envelopeVelocity (100, 0) == 100);
+    CHECK (settings.envelopeVelocity (100, 500) == 60);
+    CHECK (settings.envelopeVelocity (100, 2000) == 20);
+    CHECK (settings.humanizedVelocity (60, -1) == 45);
+    CHECK (settings.humanizedVelocity (60, 1) == 75);
+    CHECK (settings.humanizedVelocity (120, 1) == 127);
+    CHECK (settings.humanizedVelocity (0, 1) == 0);
+    settings.velocityEnabled = false;
+    CHECK (settings.envelopeVelocity (100, 1000) == 100);
+    CHECK (settings.humanizedVelocity (100, -1) == 75);
 }
 
 TEST_CASE ("Velocity envelope always resets on note retrigger including legacy settings", "[arp]")
@@ -672,4 +716,44 @@ TEST_CASE ("Octave order supports complete phrases and interleaved notes", "[arp
         REQUIRE (notes.size() == 6);
         for (size_t i = 0; i < notes.size(); i += 2) CHECK (notes[i + 1] == notes[i] + 12);
     }
+}
+
+TEST_CASE ("Envelope graph ratio follows retrigger tempo and overrides source velocity", "[arp][envelope]")
+{
+    ArpeggiatorSettings settings;
+    settings.velocityEnabled = true; settings.startVelocity = 120; settings.target = 0;
+    settings.durationRatio = 0.25; settings.retrigger = 2; settings.interval = 2;
+    const auto run = settings.envelopeRunMs (3, 120);
+    CHECK (run == Catch::Approx (1000));
+    CHECK (settings.envelopeVelocity (30, 0, run) == 120);
+    CHECK (settings.envelopeVelocity (30, 125, run) == 60);
+    CHECK (settings.envelopeVelocity (30, 250, run) == 0);
+    CHECK (settings.envelopeRunMs (3, 60) == Catch::Approx (2000));
+    settings.durationRatio = 0;
+    CHECK (settings.envelopeVelocity (30, 0, run) == 120);
+    CHECK (settings.envelopeVelocity (30, 0.01, run) == 0);
+    settings.velocityEnabled = false;
+    CHECK (settings.envelopeVelocity (30, 125, run) == 30);
+}
+
+TEST_CASE ("Sequence loop window chases its start and releases notes at every wrap", "[loop-range]")
+{
+    Timeline timeline;
+    REQUIRE (parseProgression ("C - G - Am - F", timeline).wasOk());
+    timeline.loopEnabled = true; timeline.loopStart = 6; timeline.loopEnd = 10;
+    TimelineEngine engine;
+    juce::MidiBuffer midi;
+    engine.render (timeline, 0, 120, 100, 401, true, false, midi);
+    const auto events = readEvents (midi);
+    std::vector<int> roots;
+    for (const auto& event : events)
+        if (event.on && (event.note == 67 || event.note == 69)) roots.push_back (event.note);
+    CHECK (roots == std::vector<int> { 67, 69, 67, 69, 67 });
+    int onsAtWrap = 0, offsAtWrap = 0;
+    for (const auto& event : events)
+        if (event.sample == 200) { if (event.on) ++onsAtWrap; else ++offsAtWrap; }
+    CHECK (onsAtWrap == 3);
+    CHECK (offsAtWrap == 3);
+    midi.clear(); engine.stop (midi);
+    CHECK (readEvents (midi).size() == 3);
 }

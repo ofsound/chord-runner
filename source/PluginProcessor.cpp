@@ -2,12 +2,74 @@
 #include "PluginEditor.h"
 #include <cmath>
 
+class ArpModeParameter final : public juce::AudioProcessorParameterWithID
+{
+public:
+    explicit ArpModeParameter (PluginProcessor& owner)
+        : AudioProcessorParameterWithID (juce::ParameterID { "arpMode", 1 }, "Arp Mode"), processor (owner) {}
+    static constexpr std::array<int, 9> modes { 0, 1, 2, 3, 4, 5, 6, 8, 9 };
+    const juce::StringArray names { "Up", "Down", "Up & Down", "Down & Up", "Converge", "Diverge", "Play Order", "Random", "Random Other" };
+    float getValue() const override
+    {
+        const int slot = juce::jlimit (0, PluginProcessor::patternCount - 1, processor.selectedPattern());
+        const int style = processor.liveStyles[static_cast<size_t> (slot)].load (std::memory_order_acquire);
+        for (size_t i = 0; i < modes.size(); ++i)
+            if (modes[i] == style) return static_cast<float> (i) / 8.0f;
+        return 0.0f; // Legacy modes remain intact until explicitly changed.
+    }
+    void setValue (float value) override
+    {
+        if (! std::isfinite (value)) return;
+        const int slot = processor.selectedPattern();
+        if (slot < 0 || slot >= PluginProcessor::patternCount) return;
+        const int index = juce::roundToInt (juce::jlimit (0.0f, 1.0f, value) * 8.0f);
+        if (processor.liveStyles[static_cast<size_t> (slot)].exchange (modes[static_cast<size_t> (index)], std::memory_order_acq_rel) != modes[static_cast<size_t> (index)])
+            processor.revision.fetch_add (1, std::memory_order_release);
+        processor.notifiedMode.store (index, std::memory_order_relaxed);
+    }
+    float getDefaultValue() const override { return 0.0f; }
+    int getNumSteps() const override { return 9; }
+    bool isDiscrete() const override { return true; }
+    juce::StringArray getAllValueStrings() const override { return names; }
+    juce::String getText (float value, int maximumLength) const override
+    {
+        const auto text = names[juce::roundToInt (juce::jlimit (0.0f, 1.0f, value) * 8.0f)];
+        return maximumLength > 0 ? text.substring (0, maximumLength) : text;
+    }
+    float getValueForText (const juce::String& text) const override
+    {
+        return static_cast<float> (juce::jmax (0, names.indexOf (text, true))) / 8.0f;
+    }
+private:
+    PluginProcessor& processor;
+};
+
+void PluginProcessor::notifyArpMode()
+{
+    const float value = arpModeParameter->getValue();
+    const int index = juce::roundToInt (value * 8.0f);
+    if (notifiedMode.exchange (index) != index)
+        arpModeParameter->sendValueChangedMessageToListeners (value);
+}
+void PluginProcessor::beginArpModeGesture()
+{
+    beginEditGesture();
+    arpModeParameter->beginChangeGesture();
+}
+void PluginProcessor::endArpModeGesture()
+{
+    arpModeParameter->endChangeGesture();
+    endEditGesture();
+}
+
 PluginProcessor::PluginProcessor()
     : AudioProcessor (BusesProperties().withOutput ("Out", juce::AudioChannelSet::stereo(), true))
 {
    #if JUCE_IOS
     iosLibrary = std::make_shared<chordrunner::IOSProjectLibrary>();
    #endif
+    arpModeParameter = new ArpModeParameter (*this);
+    addParameter (arpModeParameter);
     snapshots = std::make_unique<chordrunner::SnapshotExchange<PlaybackBank>>();
     for (int i = 0; i < patternCount; ++i)
         patterns[static_cast<size_t> (i)].name = "Pattern " + juce::String (i + 1);
@@ -102,7 +164,7 @@ void PluginProcessor::processBlock (juce::AudioBuffer<float>& audio, juce::MidiB
     {
         queuedPattern = slot;
         const int mode = launchMode.load (std::memory_order_relaxed);
-        const double quantum = mode == 1 ? 0.25 : mode == 2 ? 1.0 : mode == 3 ? 4.0 : master.length();
+        const double quantum = mode == 1 ? 0.25 : mode == 2 ? 1.0 : mode == 3 ? 4.0 : master.playbackLength();
         const double origin = mode == 4 ? patternOrigin : 0.0;
         launchBeat = ! playing || mode == 0 ? at : origin + std::ceil ((at - origin - 1.0e-9) / quantum) * quantum;
         queuedStatus.store (slot, std::memory_order_release);
@@ -146,6 +208,8 @@ void PluginProcessor::processBlock (juce::AudioBuffer<float>& audio, juce::MidiB
         else
         {
             const auto& timeline = bank.patterns[static_cast<size_t> (activePattern)];
+            auto arpSettings = timeline.arp;
+            arpSettings.style = liveStyles[static_cast<size_t> (activePattern)].load (std::memory_order_acquire);
             const bool segmentPlaying = (hosted || ! timeline.sequencerEnabled || playRequested.load (std::memory_order_acquire))
                 && (! sync || hostPlaying);
             const bool changed = renderedRevision != timeline.noteRevision;
@@ -174,12 +238,12 @@ void PluginProcessor::processBlock (juce::AudioBuffer<float>& audio, juce::MidiB
                 engine.render (timeline, localBeat, bpm, getSampleRate(), count, segmentPlaying, changed || force || route,
                                timeline.arp.enabled ? sequenceMidi : segmentMidi);
                 if (timeline.arp.enabled)
-                    arpeggiator.render (timeline.arp, sequenceMidi, segmentMidi, localBeat, bpm, getSampleRate(), count, segmentPlaying, changed || force, timeline.velocity);
+                    arpeggiator.render (arpSettings, sequenceMidi, segmentMidi, localBeat, bpm, getSampleRate(), count, segmentPlaying, changed || force, timeline.velocity);
             }
             else if (timeline.arp.enabled)
             {
                 if (midi.data.size() <= maxInputBytes)
-                    arpeggiator.render (timeline.arp, inputMidi, segmentMidi, localBeat, bpm, getSampleRate(), count, segmentPlaying, changed || force);
+                    arpeggiator.render (arpSettings, inputMidi, segmentMidi, localBeat, bpm, getSampleRate(), count, segmentPlaying, changed || force);
                 else
                     arpeggiator.stop (segmentMidi);
             }
@@ -241,6 +305,8 @@ void PluginProcessor::processBlock (juce::AudioBuffer<float>& audio, juce::MidiB
     expectedHostBeat = beat + samples * beatsPerSample;
     arpPulseRhythmStep.store (arpeggiator.triggerRhythmStep(), std::memory_order_relaxed);
     arpPulseStep.store (arpeggiator.triggerStep(), std::memory_order_relaxed);
+    arpSourceVelocity.store (arpeggiator.triggerSourceVelocity(), std::memory_order_relaxed);
+    arpEnvelopeMs.store (arpeggiator.triggerEnvelopeMs(), std::memory_order_relaxed);
     arpPulseVelocity.store (arpeggiator.triggerVelocity(), std::memory_order_relaxed);
     arpPulseAge.store (arpeggiator.triggerAgeMs (getSampleRate()), std::memory_order_relaxed);
     arpInputCount.store (arpeggiator.inputNoteCount(), std::memory_order_relaxed);
@@ -248,8 +314,9 @@ void PluginProcessor::processBlock (juce::AudioBuffer<float>& audio, juce::MidiB
     finishMidiBlock (midi);
     playingStatus.store (playing, std::memory_order_relaxed);
     hostAvailable.store (available, std::memory_order_relaxed);
-    const auto length = bank.patterns[static_cast<size_t> (juce::jmax (0, activePattern))].length();
-    beatStatus.store (playing ? std::fmod (juce::jmax (0.0, beat + samples * beatsPerSample - patternOrigin), length) : 0.0, std::memory_order_relaxed);
+    const auto length = bank.patterns[static_cast<size_t> (juce::jmax (0, activePattern))].playbackLength();
+    beatStatus.store (playing ? std::fmod (juce::jmax (0.0, beat + samples * beatsPerSample - patternOrigin), length)
+        + bank.patterns[static_cast<size_t> (juce::jmax (0, activePattern))].playbackStart() : 0.0, std::memory_order_relaxed);
     tempoStatus.store (bpm, std::memory_order_relaxed);
     chordStatus.store (activePattern < 0 ? -1 : engine.activeChord(), std::memory_order_relaxed);
 }
@@ -390,6 +457,8 @@ juce::var PluginProcessor::getTransportState() const
     object->setProperty ("arpPulseSerial", static_cast<juce::int64> (arpPulseSerial.load (std::memory_order_acquire)));
     object->setProperty ("arpPulseStep", static_cast<juce::int64> (arpPulseStep.load (std::memory_order_relaxed)));
     object->setProperty ("arpPulseRhythmStep", static_cast<juce::int64> (arpPulseRhythmStep.load (std::memory_order_relaxed)));
+    object->setProperty ("arpSourceVelocity", arpSourceVelocity.load (std::memory_order_relaxed));
+    object->setProperty ("arpEnvelopeMs", arpEnvelopeMs.load (std::memory_order_relaxed));
     object->setProperty ("arpPulseVelocity", arpPulseVelocity.load (std::memory_order_relaxed));
     object->setProperty ("arpPulseSampleAgeMs", arpPulseAge.load (std::memory_order_relaxed));
     object->setProperty ("arpPulseAgeMs", juce::Time::getMillisecondCounterHiRes() - arpPulseDueMs.load (std::memory_order_relaxed));
